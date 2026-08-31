@@ -9,6 +9,126 @@ interface ChatMessageProps {
   timestamp?: string;
 }
 
+function topologicalSortOpenUI(code: string): string {
+  // 1. Group into logical statement blocks (handles multi-line statements)
+  const lines = code.split("\n");
+  const statements: { lhs: string; rhs: string; raw: string; deps: string[] }[] = [];
+
+  let currentBlock: string[] = [];
+  let openParens = 0;
+  let openBrackets = 0;
+  let openBraces = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed && openParens === 0 && openBrackets === 0 && openBraces === 0) {
+      continue;
+    }
+
+    currentBlock.push(line);
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === "(") openParens++;
+      else if (char === ")") openParens = Math.max(0, openParens - 1);
+      else if (char === "[") openBrackets++;
+      else if (char === "]") openBrackets = Math.max(0, openBrackets - 1);
+      else if (char === "{") openBraces++;
+      else if (char === "}") openBraces = Math.max(0, openBraces - 1);
+    }
+
+    if (openParens === 0 && openBrackets === 0 && openBraces === 0 && currentBlock.length > 0) {
+      const fullStatement = currentBlock.join("\n").trim();
+      currentBlock = [];
+
+      const match = fullStatement.match(/^\s*([a-zA-Z_]\w*)\s*=\s*([\s\S]+)$/);
+      if (match) {
+        const lhs = match[1];
+        const rhs = match[2];
+
+        // Extract identifier dependencies from rhs
+        const rawTokens = rhs.match(/\b[a-zA-Z_]\w*\b/g) || [];
+        const builtins = new Set([
+          "Root", "Container", "Column", "Row", "Grid", "Card", "Callout", "Tag",
+          "MetricCard", "PieChart", "BarChart", "HorizontalBarChart", "FundLineChart",
+          "AreaChart", "RadarChart", "RadialChart", "FunnelChart", "SankeyChart",
+          "Table", "TextContent", "InputField", "Query", "sql_query", "rows", "props",
+          "data", "xKey", "yKey", "nameKey", "valueKey", "title", "sql", "true", "false", "null"
+        ]);
+
+        const deps = rawTokens.filter((t) => t !== lhs && !builtins.has(t) && isNaN(Number(t)));
+        statements.push({ lhs, rhs, raw: fullStatement, deps: Array.from(new Set(deps)) });
+      } else {
+        statements.push({ lhs: "", rhs: "", raw: fullStatement, deps: [] });
+      }
+    }
+  }
+
+  if (currentBlock.length > 0) {
+    statements.push({ lhs: "", rhs: "", raw: currentBlock.join("\n").trim(), deps: [] });
+  }
+
+  // 2. Build Dependency Graph
+  const allDefinedVars = new Set(statements.map((s) => s.lhs).filter(Boolean));
+  statements.forEach((s) => {
+    s.deps = s.deps.filter((d) => allDefinedVars.has(d));
+  });
+
+  // 3. Kahn's Algorithm for Topological Ordering
+  const sorted: string[] = [];
+  const emittedVars = new Set<string>();
+  const remaining = [...statements];
+
+  let progress = true;
+  while (remaining.length > 0 && progress) {
+    progress = false;
+    for (let i = 0; i < remaining.length; i++) {
+      const stmt = remaining[i];
+      const ready = stmt.deps.every((d) => emittedVars.has(d));
+      const isRoot = stmt.lhs === "root";
+      const otherUnemittedNonRoot = remaining.some((r) => r !== stmt && r.lhs !== "root");
+
+      if (ready && (!isRoot || !otherUnemittedNonRoot)) {
+        sorted.push(stmt.raw);
+        if (stmt.lhs) emittedVars.add(stmt.lhs);
+        remaining.splice(i, 1);
+        progress = true;
+        break;
+      }
+    }
+  }
+
+  if (remaining.length > 0) {
+    remaining.forEach((s) => sorted.push(s.raw));
+  }
+
+  return sorted.join("\n\n");
+}
+
+class RendererErrorBoundary extends React.Component<{ children: React.ReactNode; fallback?: React.ReactNode }, { hasError: boolean; error: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    console.warn("OpenUI Renderer caught render error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 bg-amber-50/60 border border-amber-200/80 rounded-2xl text-xs text-amber-900 my-2">
+          <div className="font-semibold text-amber-800 mb-1">Rendering Live Stream...</div>
+          <div className="text-[11px] text-amber-700/80">Resolving incoming component tree...</div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
@@ -17,6 +137,37 @@ export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessag
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const sanitizedText = useMemo(() => {
+    if (!text) return "";
+    let code = text.trim();
+
+    // Strip markdown fences
+    code = code.replace(/^```[a-zA-Z]*\n?/gm, "").replace(/```$/gm, "").trim();
+
+    // Normalize Root/Stack/Container → Column everywhere
+    code = code.replace(/\bRoot\s*\(/g, "Column(");
+    code = code.replace(/\b(Stack|Container)\s*\(/g, "Column(");
+
+    // If root = Column(singleVar) or root = Column([singleVar]):
+    code = code.replace(/^\s*root\s*=\s*Column\(\s*\[?\s*([a-zA-Z_]\w*)\s*\]?\s*\)\s*$/gm, "root = $1");
+
+    // CRITICAL: root = varName (simple alias) → inline the variable's value
+    const rootAliasMatch = code.match(/^\s*root\s*=\s*([a-zA-Z_]\w*)\s*$/m);
+    if (rootAliasMatch) {
+      const varName = rootAliasMatch[1];
+      const varDefMatch = code.match(new RegExp(`^\\s*${varName}\\s*=\\s*(.+)$`, "m"));
+      if (varDefMatch) {
+        const varValue = varDefMatch[1].trim();
+        code = code.replace(/^\s*root\s*=\s*[a-zA-Z_]\w*\s*$/m, `root = ${varValue}`);
+      }
+    }
+
+    // Apply Topological Sort so Queries -> Leaf Components -> Containers -> Root execute in 100% valid DAG order
+    code = topologicalSortOpenUI(code);
+
+    return code;
+  }, [text]);
 
   const toolProvider = useMemo(
     () => ({
@@ -28,94 +179,100 @@ export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessag
           args = toolName.args ?? toolName.arguments ?? toolName.input ?? args;
           toolName = toolName.toolName ?? toolName.name ?? toolName.tool ?? String(toolName);
         }
-        const fallbackFundName = text.match(/(?:fundName|\\$fundName)\s*=\s*"([^"]+)"/)?.[1] ?? "";
-        const rawQ = args?.q ?? args?.query ?? args?.search ?? args?.fund ?? fallbackFundName;
-        const q = encodeURIComponent(rawQ);
-        const limit = Number(args?.limit ?? 0);
-
-        const fetchJson = async (url: string) => {
-          const res = await fetch(url);
-          const text = await res.text();
-          let json: any;
-          try {
-            json = text ? JSON.parse(text) : null;
-          } catch (error) {
-            console.error("[tool-provider] parse failed", { toolName, status: res.status, text, error });
-            throw error;
-          }
-          if (!res.ok) throw new Error(`${toolName} failed ${res.status}: ${text}`);
+        if (toolName === "sql_query") {
+          const sql = args?.sql || args?.query || "";
+          const res = await fetch("http://127.0.0.1:8001/api/tools/sql_query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sql, max_rows: args?.max_rows || 100 }),
+          });
+          const json = await res.json();
           return {
             content: [{ type: "text", text: JSON.stringify(json) }],
             structuredContent: json,
           };
+        }
+        // Generic fallback for any tool
+        const res = await fetch(`http://127.0.0.1:8001/api/tools/${toolName}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(args || {}),
+        });
+        const json = await res.json();
+        return {
+          content: [{ type: "text", text: JSON.stringify(json) }],
+          structuredContent: json,
         };
-
-        if (toolName === "portfolio_holdings") {
-          return fetchJson(`http://127.0.0.1:8000/api/tools/portfolio_holdings?q=${q}&limit=${limit}`);
-        }
-        if (toolName === "market_cap_allocation" || toolName === "sector_allocation") {
-          return fetchJson(`http://127.0.0.1:8000/api/tools/market_cap_allocation?q=${q}`);
-        }
-        if (toolName === "aum_history" || toolName === "nav_history") {
-          return fetchJson(`http://127.0.0.1:8000/api/tools/aum_history?q=${q}&limit=${limit || 24}`);
-        }
-        if (toolName === "fund_overview") {
-          return fetchJson(`http://127.0.0.1:8000/api/tools/fund_overview?q=${q}`);
-        }
-        throw new Error(`Unknown tool: ${toolName} args=${JSON.stringify(args)}`);
       },
     }),
     [text]
   );
 
+  const [showSource, setShowSource] = useState(false);
+
   return (
-    <div className="w-full bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm space-y-4 transition-all">
+    <div className="group w-full bg-white border border-zinc-200/90 rounded-2xl p-5 shadow-[0_1px_4px_rgba(0,0,0,0.03)] hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)] space-y-4 transition-all">
       {/* Header Bar */}
-      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+      <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shadow-blue-500/20">
+          <div className="w-7 h-7 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm shadow-blue-500/25">
             <Bot className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-800 tracking-tight">MF Saarthi AI</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-100">
+              <span className="text-xs font-semibold text-zinc-900 tracking-tight">MF Saarthi Intelligence</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-100/80">
                 <Sparkles className="w-2.5 h-2.5" />
-                Live Postgres
+                Live Engine
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          {timestamp && <span>{timestamp}</span>}
+        <div className="flex items-center gap-1.5">
+          {timestamp && <span className="text-[11px] text-zinc-400 mr-2">{timestamp}</span>}
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors"
-            title="Copy OpenUI Lang code"
+            className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-100 transition-colors"
+            title="Copy response"
           >
-            {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-            <span>{copied ? "Copied" : "Copy Code"}</span>
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            onClick={() => setShowSource(!showSource)}
+            className={`p-1.5 rounded-lg transition-colors ${
+              showSource ? "bg-blue-50 text-blue-600" : "text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100"
+            }`}
+            title="Toggle Source Code"
+          >
+            <Code2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Main Interactive OpenUI Component Tree */}
-      <div className="pt-1">
-        <Renderer library={myLibrary} response={text} isStreaming={isStreaming} toolProvider={toolProvider} />
+      {/* Reactive OpenUI Component Canvas */}
+      <div className="w-full pt-1">
+        <RendererErrorBoundary>
+          <Renderer
+            library={myLibrary}
+            response={sanitizedText}
+            isStreaming={isStreaming}
+            toolProvider={toolProvider}
+          />
+        </RendererErrorBoundary>
       </div>
 
-      {/* Collapsible DSL Code Viewer */}
-      <details className="group rounded-xl border border-slate-200/80 bg-slate-50/80 overflow-hidden text-xs transition-all">
-        <summary className="cursor-pointer px-3.5 py-2.5 font-medium text-slate-600 hover:text-slate-900 flex items-center gap-2 select-none">
-          <Code2 className="w-3.5 h-3.5 text-slate-500" />
-          <span>View openui-lang AST Code</span>
-          <span className="ml-auto text-[10px] text-slate-400 font-mono group-open:rotate-180 transition-transform">▼</span>
-        </summary>
-        <div className="border-t border-slate-200/60 p-3.5 bg-slate-900 text-slate-100 font-mono text-[11px] overflow-x-auto leading-relaxed whitespace-pre-wrap break-words rounded-b-xl">
-          {text}
+      {/* Source Code Toggle */}
+      {showSource && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-zinc-200 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words shadow-inner transition-all">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800 text-[10px] text-zinc-500 font-sans uppercase font-bold tracking-wider">
+            <span>openui-lang AST Execution Payload</span>
+            <span>Declarative DSL</span>
+          </div>
+          <pre>{sanitizedText}</pre>
         </div>
-      </details>
+      )}
     </div>
   );
 }
+

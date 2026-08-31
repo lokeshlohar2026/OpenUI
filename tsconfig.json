@@ -14,7 +14,8 @@
     "strict": true,
     "noUnusedLocals": false,
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
   },
-  "include": ["src", "ChatPage.tsx", "ChatMessage.tsx", "openui-library.tsx"]
+  "include": ["src", "scripts"]
 }

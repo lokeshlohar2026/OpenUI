@@ -1,72 +1,22 @@
-from typing import Optional, Dict, Any
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
-from db import (
-    get_portfolio_holdings,
-    get_market_cap_allocation,
-    get_aum_history,
-    get_fund_overview,
-)
+from db import execute_safe_sql
 
 
-class FundSearchInput(BaseModel):
-    q: str = Field(description="Fund or AMC name substring, e.g. 'HDFC Flexi Cap', 'SBI Bluechip'")
+class SqlQueryInput(BaseModel):
+    sql: str = Field(description="Standard PostgreSQL SELECT query")
+    max_rows: Optional[int] = Field(default=50, description="Max rows to return (default 50)")
 
 
-class PortfolioHoldingsInput(FundSearchInput):
-    limit: Optional[int] = Field(
-        default=0,
-        description="Max holdings rows to return (default 0 returns all holdings)",
-    )
-
-
-class AumHistoryInput(FundSearchInput):
-    limit: Optional[int] = Field(
-        default=24,
-        description="Number of monthly records to return (default 24)",
-    )
-
-
-@tool("portfolio_holdings", args_schema=PortfolioHoldingsInput)
-def portfolio_holdings_tool(q: str, limit: int = 0) -> Dict[str, Any]:
+@tool("sql_query", args_schema=SqlQueryInput)
+def sql_query_tool(sql: str, max_rows: int = 50) -> Dict[str, Any]:
     """
-    Get portfolio stock holdings and percentage of net asset for any mutual fund.
-    Returns { holdings: [{ company_name: str, percentage_in_net_asset: float, portfolio_date: str }] }.
+    Universal safe PostgreSQL read-only query tool.
+    Executes any dynamic SELECT query against the auto-discovered database schema.
     """
-    return get_portfolio_holdings(q=q, limit=limit)
+    return execute_safe_sql(sql_query=sql, max_rows=max_rows)
 
 
-@tool("market_cap_allocation", args_schema=FundSearchInput)
-def market_cap_allocation_tool(q: str) -> Dict[str, Any]:
-    """
-    Get Market Cap allocation (Large Cap, Mid Cap, Small Cap % breakdown) for a mutual fund.
-    Returns { allocation: [{ name: str, value: float }] }.
-    """
-    return get_market_cap_allocation(q=q)
-
-
-@tool("aum_history", args_schema=AumHistoryInput)
-def aum_history_tool(q: str, limit: int = 24) -> Dict[str, Any]:
-    """
-    Get monthly AUM history (in ₹ Cr) over time for fund growth trajectory line charts.
-    Returns { history: [{ date: str, aum: float }] }.
-    """
-    return get_aum_history(q=q, limit=limit)
-
-
-@tool("fund_overview", args_schema=FundSearchInput)
-def fund_overview_tool(q: str) -> Dict[str, Any]:
-    """
-    Get mutual fund metadata (Total AUM, Nature, Sub Nature, Riskometer, Fund Managers).
-    Returns { overview: { fund_name: str, aum_cr: str, nature: str, sub_nature: str, riskometer: str, managers: str } }.
-    """
-    return get_fund_overview(q=q)
-
-
-# Exported list of all OpenUI tools ready to be passed directly to any LangChain Agent or Orchestrator
-ALL_OPENUI_TOOLS = [
-    portfolio_holdings_tool,
-    market_cap_allocation_tool,
-    aum_history_tool,
-    fund_overview_tool,
-]
+# Single Universal Tool for LangChain Agents & Orchestrator
+ALL_OPENUI_TOOLS = [sql_query_tool]

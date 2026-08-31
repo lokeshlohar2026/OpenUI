@@ -6,19 +6,14 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from dotenv import load_dotenv
 
 from chains import stream_openui_chain
-from db import (
-    get_portfolio_holdings,
-    get_market_cap_allocation,
-    get_aum_history,
-    get_fund_overview,
-)
+from db import execute_safe_sql
 
 load_dotenv()
 
 app = FastAPI(
     title="MF Saarthi OpenUI Backend",
-    version="1.0.0",
-    description="Production-grade LangChain-compatible backend with PostgreSQL database tools for generative OpenUI interfaces.",
+    version="2.0.0",
+    description="Universal Dynamic SQL Engine for Generative OpenUI Interfaces.",
 )
 
 app.add_middleware(
@@ -32,7 +27,39 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "openui-backend"}
+    return {
+        "status": "ok",
+        "service": "openui-backend",
+        "mode": "universal-sql-engine",
+        "tools_count": 1,
+    }
+
+
+# ── Universal Dynamic SQL Tool Endpoint ─────────────────────────────────────
+
+
+@app.post("/api/tools/sql_query")
+async def sql_query_post(request: Request):
+    """Universal Dynamic SQL Execution endpoint called by OpenUI Query('sql_query', ...)"""
+    try:
+        body = await request.json()
+        query = body.get("sql") or body.get("query") or ""
+        max_rows = int(body.get("max_rows", 100))
+        res = execute_safe_sql(query, max_rows=max_rows)
+        return JSONResponse(content=res)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"rows": [], "error": str(e)})
+
+
+@app.get("/api/tools/sql_query")
+def sql_query_get(sql: str = "", query: str = "", max_rows: int = 100):
+    """GET variant of Universal Dynamic SQL execution."""
+    target_sql = sql or query
+    try:
+        res = execute_safe_sql(target_sql, max_rows=max_rows)
+        return JSONResponse(content=res)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"rows": [], "error": str(e)})
 
 
 # ── Chat Streaming Gateway ──────────────────────────────────────────────────
@@ -63,51 +90,8 @@ async def chat_stream(request: Request):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-# ── Predefined SQL Tool Endpoints ──────────────────────────────────────────
-
-
-@app.get("/api/tools/portfolio_holdings")
-def portfolio_holdings(q: str = "", limit: int = 0):
-    """Fetch top stock holdings from PostgreSQL."""
-    try:
-        data = get_portfolio_holdings(q=q, limit=limit)
-        return JSONResponse(content=data)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-@app.get("/api/tools/market_cap_allocation")
-def market_cap_allocation(q: str = ""):
-    """Fetch Large / Mid / Small Cap allocation breakdown from PostgreSQL."""
-    try:
-        data = get_market_cap_allocation(q=q)
-        return JSONResponse(content=data)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-@app.get("/api/tools/aum_history")
-def aum_history(q: str = "", limit: int = 24):
-    """Fetch monthly AUM history for line charts from PostgreSQL."""
-    try:
-        data = get_aum_history(q=q, limit=limit)
-        return JSONResponse(content=data)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
-@app.get("/api/tools/fund_overview")
-def fund_overview(q: str = ""):
-    """Fetch fund overview metadata (AUM, Category, Riskometer, Managers)."""
-    try:
-        data = get_fund_overview(q=q)
-        return JSONResponse(content=data)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
-
-
 if __name__ == "__main__":
     host = os.getenv("APP_HOST", "127.0.0.1")
-    port = int(os.getenv("APP_PORT", "8000"))
-    print(f"🚀 Starting MF Saarthi OpenUI Server on http://{host}:{port}")
+    port = int(os.getenv("APP_PORT", "8001"))
+    print(f"Starting MF Saarthi Universal OpenUI Server on http://{host}:{port}")
     uvicorn.run("main:app", host=host, port=port, reload=True)
