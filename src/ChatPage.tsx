@@ -1,24 +1,19 @@
 import React, { useState, useRef, useEffect } from "react";
 import { ChatMessage } from "./ChatMessage";
 import {
-  Send,
   Sparkles,
   Bot,
   User,
   Plus,
   Trash2,
   PieChart,
-  BarChart3,
-  TrendingUp,
   ShieldCheck,
-  ChevronRight,
   Database,
   Zap,
   Layers,
   Scale,
   Users,
   ArrowUp,
-  Square,
 } from "lucide-react";
 
 interface Message {
@@ -107,7 +102,8 @@ export default function ChatPage() {
     const assistantTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
     try {
-      const response = await fetch("http://127.0.0.1:8001/api/v1/chat/stream", {
+      const base = (import.meta as any).env?.VITE_API_BASE_URL || "http://127.0.0.1:8001";
+      const response = await fetch(`${base}/api/v1/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: textToSend }),

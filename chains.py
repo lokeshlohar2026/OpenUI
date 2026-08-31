@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import AsyncGenerator, Optional, Dict, Any
 import httpx
 from dotenv import load_dotenv
-from db import get_db_schema_catalog
 from logger import log_llm_interaction
 
 try:
@@ -69,6 +68,40 @@ def load_system_prompt() -> str:
     return "You are an AI financial assistant generating OpenUI declarative code."
 
 
+async def _stream_openai_compatible(base_url: str, api_key: str, payload: Dict[str, Any], err_prefix: str) -> AsyncGenerator[str, None]:
+    """Shared helper for OpenAI-compatible streaming (Groq, OpenCode)."""
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    max_retries = 3
+    for attempt in range(max_retries):
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", f"{base_url}/chat/completions", headers=headers, json=payload) as response:
+                if response.status_code == 429 and attempt < max_retries - 1:
+                    await asyncio.sleep(2.5 * (1 if err_prefix == "Groq" else 1))
+                    continue
+                if response.status_code != 200:
+                    err_body = await response.aread()
+                    yield f'root = Column([TextContent("{err_prefix} API error {response.status_code}: {err_body.decode(errors="ignore")}")])'
+                    return
+                try:
+                    async for line in response.aiter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content") or delta.get("content", "")
+                            if content:
+                                yield content
+                        except Exception:
+                            continue
+                    return
+                except GeneratorExit:
+                    return
+
+
 async def stream_groq(prompt_text: str, query: str) -> AsyncGenerator[str, None]:
     """Streams response from Groq API (openai/gpt-oss-20b)."""
     api_key = os.getenv("GROQ_API_KEY", "")
@@ -90,47 +123,8 @@ async def stream_groq(prompt_text: str, query: str) -> AsyncGenerator[str, None]
     if GROQ_REASONING_EFFORT:
         payload["reasoning_effort"] = GROQ_REASONING_EFFORT
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    max_retries = 3
-    for attempt in range(max_retries):
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream(
-                "POST",
-                f"{GROQ_BASE_URL}/chat/completions",
-                headers=headers,
-                json=payload,
-            ) as response:
-                if response.status_code == 429 and attempt < max_retries - 1:
-                    await asyncio.sleep(2.5)
-                    continue
-
-                if response.status_code != 200:
-                    err_body = await response.aread()
-                    yield f'root = Column([TextContent("Groq API error {response.status_code}: {err_body.decode(errors="ignore")}")])'
-                    return
-
-                try:
-                    async for line in response.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                            delta = chunk.get("choices", [{}])[0].get("delta", {})
-                            content = delta.get("content")
-                            if content:
-                                yield content
-                        except Exception:
-                            continue
-                    return
-                except GeneratorExit:
-                    return
+    async for chunk in _stream_openai_compatible(GROQ_BASE_URL, api_key, payload, "Groq"):
+        yield chunk
 
 
 async def stream_gemini(prompt_text: str, query: str) -> AsyncGenerator[str, None]:
@@ -208,40 +202,8 @@ async def stream_opencode(prompt_text: str, query: str) -> AsyncGenerator[str, N
     if OPENCODE_REASONING_EFFORT:
         payload["reasoning_effort"] = OPENCODE_REASONING_EFFORT
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        async with client.stream(
-            "POST",
-            f"{OPENCODE_BASE_URL}/chat/completions",
-            headers=headers,
-            json=payload,
-        ) as response:
-            if response.status_code != 200:
-                err_body = await response.aread()
-                yield f'root = Column([TextContent("OpenCode API error {response.status_code}: {err_body.decode(errors="ignore")}")])'
-                return
-
-            try:
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        delta = chunk.get("choices", [{}])[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            yield content
-                    except Exception:
-                        continue
-            except GeneratorExit:
-                return
+    async for chunk in _stream_openai_compatible(OPENCODE_BASE_URL, api_key, payload, "OpenCode"):
+        yield chunk
 
 
 
@@ -326,8 +288,8 @@ def normalize_ast_root(code: str) -> str:
     if not code:
         return code
 
-    # Sanitize invalid macros (@Max, @Min, @First, @Last)
-    code = re.sub(r'@(?:Max|Min|First|Last|Sum|Avg)\([^)]*\)', '"—"', code)
+    # Sanitize invalid macros (@Max, @Min, @First, @Last) – @Sum/@Avg/@Count/@Round are VALID and handled by frontend rewriteMacros / MetricCard
+    code = re.sub(r'@(?:Max|Min|First|Last)\([^)]*\)', '"—"', code)
 
     # Sanitize unsafe array indexing in AST expressions (e.g. query.rows[0].value -> "—")
     code = re.sub(r'\b[a-zA-Z_]\w*\.rows\[\d+\](?:\.[a-zA-Z_]\w*)?', '"—"', code)

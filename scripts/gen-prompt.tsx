@@ -279,10 +279,10 @@ const syntacticRulesPrompt = `CRITICAL SYNTACTIC RULES:
    - STAGE 2 (MIDDLE): Declare visual components (MetricCard, PieChart, BarChart, HorizontalBarChart, FundLineChart, AreaChart, RadarChart, Grid, Card) consuming those queries.
    - STAGE 3 (VERY BOTTOM): Mount root = Column([...]) or root = Root(Container([...])) at the VERY BOTTOM.
 1. Strict Macro Syntax: Never concatenate strings with macros using '+' (e.g. NEVER write "₹" + @Round(...) or @Avg(...) + "%" or @Round(@Avg(...))).
-   - Correct MetricCard Usage: Pass the macro directly as 2nd argument, and place currency/unit/percentage in the 3rd 'subtext' argument:
-     • kpiAum = MetricCard("Fund AUM", @Sum(q.rows.aum_cr), "₹ Cr — Scheme AUM")
-     • kpiTurnover = MetricCard("Portfolio Turnover", @Avg(q.rows.portfolio_turnover_ratio), "% Annual Churn")
-     • kpiPE = MetricCard("Portfolio P/E", @Avg(valQuery.rows.pe_ratio), "Weighted Price to Earnings")
+   - Correct MetricCard Usage: MetricCard handles aggregation internally – pass query.rows and column_name directly, place currency/unit/percentage in subtext:
+     • kpiAum = MetricCard("Fund AUM", q.rows, "aum_cr", "₹ Cr — Scheme AUM")
+     • kpiTurnover = MetricCard("Portfolio Turnover", q.rows, "portfolio_turnover_ratio", "% Annual Churn")
+     • kpiPE = MetricCard("Portfolio P/E", valQuery.rows, "pe_ratio", "Weighted Price to Earnings")
 2. Query Initial Value: Always supply fallback initial value: Query('sql_query', { sql: '...' }, { rows: [] })
 3. In Column([...]), Grid(...), Container(...), and Row([...]), ONLY place VISUAL components. NEVER put Query variables inside Column/Row/Grid!
 4. Strict Macro Restrictions: Only @Sum, @Count, @Avg, @Round, @FormatNumber are allowed. Never use @Max, @Min, @First, @Last.
@@ -302,7 +302,7 @@ COMPONENT PALETTE:
 • RadialChart: RadialChart(query.rows, "name", "value", 100) for riskometer & ESG gauge meters.
 • FunnelChart: FunnelChart(query.rows, "name", "value") for screening funnels.
 • SankeyChart: SankeyChart(query.rows) for capital and sector allocation flow mapping.
-• MetricCard: MetricCard("Label", "Value", "Subtitle") for high-impact KPI summary badges.
+• MetricCard: MetricCard("Label", query.rows, "column_name", "Subtext") or MetricCard("Label", "Literal Value", "Subtext") for high-impact KPI summary badges.
 • Grid: Grid(2, [card1, card2]) or Grid(3, [card1, card2, card3]) for responsive side-by-side visual comparisons.
 • Card: Card("Section Title", [chart1, chart2], "Optional footer note") to frame visual charts.
 • Callout: Callout("Disclaimer: Summary...", "info" | "warning") for brief context.`;

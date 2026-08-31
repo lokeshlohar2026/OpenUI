@@ -1,5 +1,5 @@
 import React from "react";
-import { createLibrary, defineComponent, reactive, useStateField, useIsStreaming } from "@openuidev/react-lang";
+import { createLibrary, defineComponent, useStateField, useIsStreaming } from "@openuidev/react-lang";
 import {
   ResponsiveContainer,
   LineChart,
@@ -147,13 +147,20 @@ function Card(fullProps: any) {
 
   const rawValues = Object.values(props).filter((v) => v !== null && v !== undefined);
 
+  // Any array or element node or React element is visual children
   for (const v of rawValues) {
-    if (Array.isArray(v) || (typeof v === "object" && v !== null && ((v as any).type === "element" || (v as any).statementId || React.isValidElement(v)))) {
+    if (
+      Array.isArray(v) ||
+      (typeof v === "object" &&
+        v !== null &&
+        ((v as any).type === "element" || (v as any).statementId || (v as any).typeName || React.isValidElement(v)))
+    ) {
       children = v;
       break;
     }
   }
 
+  // Pure strings are title & footer
   const stringValues = rawValues.filter((v) => typeof v === "string");
   if (stringValues.length > 0) {
     title = stringValues[0] as string;
@@ -245,12 +252,55 @@ function formatDisplayMetric(val: any): { display: string; isNumeric: boolean } 
 
 function MetricCard(fullProps: any) {
   const props = fullProps?.props ?? fullProps ?? {};
-  const label = props.label ?? "";
-  const value = props.value;
-  const subtext = props.subtext;
 
-  const { display } = formatDisplayMetric(value);
-  const isLoading = display === "—" && (value === undefined || value === null);
+  const rawValues = Object.values(props).filter((v) => v !== null && v !== undefined && v !== "");
+
+  let dataRows: any[] = [];
+  if (Array.isArray(props.data)) dataRows = props.data;
+  else if (Array.isArray(props.value)) dataRows = props.value;
+  else if (Array.isArray(props.rows)) dataRows = props.rows;
+  else {
+    for (const v of rawValues) {
+      if (Array.isArray(v) && v.length > 0 && typeof v[0] === "object") {
+        dataRows = v;
+        break;
+      }
+    }
+  }
+
+  const sample = dataRows.length > 0 ? dataRows[0] : null;
+  const stringValues = rawValues.filter((v) => typeof v === "string" && !v.startsWith("http"));
+
+  let targetKey: string | undefined = props.column || props.key || props.field;
+  if (!targetKey && sample) {
+    targetKey = stringValues.find((s) => s in sample);
+  }
+  if (!targetKey && sample) {
+    targetKey = Object.keys(sample).find((k) => typeof sample[k] === "number" || (!isNaN(Number(sample[k])) && sample[k] !== null && sample[k] !== ""));
+  }
+
+  const descriptiveStrings = stringValues.filter((s) => s !== targetKey);
+  const label = props.label || descriptiveStrings[0] || "METRIC";
+  const subtext = descriptiveStrings.length > 1 ? descriptiveStrings[descriptiveStrings.length - 1] : props.subtext || "";
+
+  let finalNumericVal: any = props.value;
+
+  if (sample && targetKey && targetKey in sample) {
+    const isAvg = /turnover|yield|pe|pb|ratio|beta|sharpe|percent|%/i.test(label);
+    if (isAvg && dataRows.length > 1) {
+      const sum = dataRows.reduce((acc, r) => acc + (Number(r[targetKey]) || 0), 0);
+      finalNumericVal = sum / dataRows.length;
+    } else if (dataRows.length === 1) {
+      finalNumericVal = Number(sample[targetKey]);
+    } else {
+      finalNumericVal = dataRows.reduce((acc, r) => acc + (Number(r[targetKey]) || 0), 0);
+    }
+  } else if (!sample && (typeof props.value === "string" || typeof props.value === "number")) {
+    finalNumericVal = props.value;
+  }
+
+  const { display } = formatDisplayMetric(finalNumericVal);
+  const isLoading = display === "—" && (finalNumericVal === undefined || finalNumericVal === null);
 
   return (
     <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-1.5 transition-all hover:border-zinc-300">
@@ -264,6 +314,8 @@ function MetricCard(fullProps: any) {
         <>
           <div className="text-xl font-extrabold text-zinc-900 mt-1">{display}</div>
           {subtext &&
+            subtext !== label &&
+            subtext !== targetKey &&
             !subtext.startsWith("0% of Net Assets") &&
             !subtext.includes("undefined") &&
             !subtext.includes("null") &&
@@ -1188,11 +1240,11 @@ const GridDef = defineComponent({
 
 const CardDef = defineComponent({
   name: "Card",
-  description: "Elevated card wrapper with title, footer, and children.",
+  description: "Elevated card wrapper with title, children, and optional footer.",
   props: z.object({
     title: z.any().optional(),
-    footer: z.any().optional(),
     children: z.any().optional(),
+    footer: z.any().optional(),
   }).passthrough(),
   component: Card,
 });
@@ -1223,6 +1275,7 @@ const MetricCardDef = defineComponent({
   props: z.object({
     label: z.any().optional(),
     value: z.any().optional(),
+    column: z.any().optional(),
     subtext: z.any().optional(),
   }).passthrough(),
   component: MetricCard,

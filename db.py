@@ -186,7 +186,7 @@ def load_fund_names_catalog() -> List[str]:
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT fund_name FROM mfi360_funds WHERE fund_name IS NOT NULL;")
+                cur.execute("SELECT fund_name FROM mfi360_funds WHERE fund_name IS NOT NULL ORDER BY aum_cr DESC NULLS LAST;")
                 _FUND_NAMES_LIST = [r[0] for r in cur.fetchall()]
     except Exception:
         pass
@@ -211,6 +211,14 @@ def resolve_best_fund_name(raw_name: str) -> str:
     catalog = load_fund_names_catalog()
     if not catalog:
         return cleaned
+
+    # Guard: generic terms like 'sbi' or 'large cap' match many funds – keep as generic substring
+    # to avoid over-resolving WHERE (fund_name ILIKE '%SBI%' AND …) to a single specific fund
+    # which would break the intended AND/OR logic.
+    if cleaned:
+        generic_match_count = sum(1 for f in catalog if cleaned.lower() in f.lower())
+        if generic_match_count > 5:
+            return cleaned
 
     # Stage 3: Exact Substring
     for f in catalog:
@@ -262,6 +270,10 @@ def execute_safe_sql(sql_query: str, max_rows: int = 100) -> Dict[str, Any]:
     3. In-memory query caching (< 0.1ms)
     4. Statement Timeout safety (2000ms max)
     """
+    try:
+        max_rows = max(1, min(200, int(max_rows)))
+    except Exception:
+        max_rows = 100
     if not sql_query or not sql_query.strip():
         return {"rows": [], "error": "Empty SQL query"}
 

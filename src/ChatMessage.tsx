@@ -129,6 +129,26 @@ class RendererErrorBoundary extends React.Component<{ children: React.ReactNode;
   }
 }
 
+function rewriteMacros(code: string): string {
+  // Strip null argument right after macro: @Sum(...), null -> @Sum(...)
+  code = code.replace(/@(Sum|Avg|Count|Round)\(([^)]+)\)\s*,\s*null/g, '@$1($2)');
+
+  // Handle string concatenation with macros: "₹" + @Sum(...) + " Cr"
+  code = code.replace(/["'][^"']*["']\s*\+\s*@(Sum|Avg|Count|Round)\(\s*([a-zA-Z_]\w*)\.rows\.([a-zA-Z_]\w*)\s*\)\s*\+\s*["'][^"']*["']/g, '$2.rows, "$3"');
+  code = code.replace(/@(Sum|Avg|Count|Round)\(\s*([a-zA-Z_]\w*)\.rows\.([a-zA-Z_]\w*)\s*\)\s*\+\s*["'][^"']*["']/g, '$2.rows, "$3"');
+  code = code.replace(/["'][^"']*["']\s*\+\s*@(Sum|Avg|Count|Round)\(\s*([a-zA-Z_]\w*)\.rows\.([a-zA-Z_]\w*)\s*\)/g, '$2.rows, "$3"');
+  
+  // Handle nested @Round(@Sum(var.rows.col), 2)
+  code = code.replace(/@Round\(\s*@(Sum|Avg|Count)\(\s*([a-zA-Z_]\w*)\.rows\.([a-zA-Z_]\w*)\s*\)\s*,\s*\d+\s*\)/g, '$2.rows, "$3"');
+  
+  // Handle simple @Sum(var.rows.col) / @Avg(var.rows.col)
+  code = code.replace(/@(Sum|Avg|Count|Round)\(\s*([a-zA-Z_]\w*)\.rows\.([a-zA-Z_]\w*)\s*\)/g, '$2.rows, "$3"');
+  
+  // Handle @Sum(var.rows)
+  code = code.replace(/@(Sum|Avg|Count|Round)\(\s*([a-zA-Z_]\w*)\.rows\s*\)/g, '$2.rows');
+  return code;
+}
+
 export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
 
@@ -163,6 +183,9 @@ export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessag
       }
     }
 
+    // Rewrite LLM macros to reactive AST component parameters
+    code = rewriteMacros(code);
+
     // Apply Topological Sort so Queries -> Leaf Components -> Containers -> Root execute in 100% valid DAG order
     code = topologicalSortOpenUI(code);
 
@@ -172,32 +195,25 @@ export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessag
   const toolProvider = useMemo(
     () => ({
       async callTool(toolName: any, args: any) {
-        const startedAt = performance.now();
-        const originalToolName = toolName;
-        const originalArgs = args;
         if (typeof toolName === "object" && toolName !== null) {
           args = toolName.args ?? toolName.arguments ?? toolName.input ?? args;
           toolName = toolName.toolName ?? toolName.name ?? toolName.tool ?? String(toolName);
         }
-        if (toolName === "sql_query") {
-          const sql = args?.sql || args?.query || "";
-          const res = await fetch("http://127.0.0.1:8001/api/tools/sql_query", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sql, max_rows: args?.max_rows || 100 }),
-          });
-          const json = await res.json();
-          return {
-            content: [{ type: "text", text: JSON.stringify(json) }],
-            structuredContent: json,
-          };
-        }
-        // Generic fallback for any tool
-        const res = await fetch(`http://127.0.0.1:8001/api/tools/${toolName}`, {
+        const base = (import.meta as any).env?.VITE_API_BASE_URL || "http://127.0.0.1:8001";
+        const url =
+          toolName === "sql_query"
+            ? `${base}/api/tools/sql_query`
+            : `${base}/api/tools/${toolName}`;
+        const body =
+          toolName === "sql_query"
+            ? { sql: args?.sql || args?.query || "", max_rows: Math.min(200, Math.max(1, Number(args?.max_rows) || 100)) }
+            : args || {};
+        const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(args || {}),
+          body: JSON.stringify(body),
         });
+        if (!res.ok) throw new Error(`Tool ${toolName} failed: ${res.status}`);
         const json = await res.json();
         return {
           content: [{ type: "text", text: JSON.stringify(json) }],
@@ -205,7 +221,7 @@ export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessag
         };
       },
     }),
-    [text]
+    []
   );
 
   const [showSource, setShowSource] = useState(false);

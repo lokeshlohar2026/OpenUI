@@ -31,11 +31,11 @@ Stack(children: any) — Vertical stack layout container.
 Container(children: any) — Full-width container wrapper.
 Row(children: any) — Horizontal row layout container.
 Grid(columns?: any, children?: any) — Responsive multi-column grid layout.
-Card(title?: any, footer?: any, children?: any) — Elevated card wrapper with title, footer, and children.
+Card(title?: any, children?: any, footer?: any) — Elevated card wrapper with title, children, and optional footer.
 Callout(message?: any, variant?: any) — Informational or warning disclaimer banner.
 Tag(label?: any, variant?: any) — Pill badge tag.
 TextContent(text?: any) — Typography block for headings and descriptive body text.
-MetricCard(label?: any, value?: any, subtext?: any) — Key performance indicator (KPI) metric card.
+MetricCard(label?: any, value?: any, column?: any, subtext?: any) — Key performance indicator (KPI) metric card.
 Table(data: any, columns?: any) — Data table with cell formatting.
 PieChart(data: any, nameKey?: any, valueKey?: any) — Donut chart for market capitalization and asset allocation splits.
 BarChart(data: any, xKey?: any, yKey?: any, title?: any) — Vertical column bar chart for discrete categorical metrics, yearly returns, and rating distributions.

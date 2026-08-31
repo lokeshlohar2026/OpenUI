@@ -38,13 +38,23 @@ def health():
 # ── Universal Dynamic SQL Tool Endpoint ─────────────────────────────────────
 
 
+def _clamp_rows(v) -> int:
+    try:
+        n = int(v)
+    except Exception:
+        n = 100
+    return max(1, min(200, n))
+
+
 @app.post("/api/tools/sql_query")
 async def sql_query_post(request: Request):
     """Universal Dynamic SQL Execution endpoint called by OpenUI Query('sql_query', ...)"""
     try:
         body = await request.json()
-        query = body.get("sql") or body.get("query") or ""
-        max_rows = int(body.get("max_rows", 100))
+        query = (body.get("sql") or body.get("query") or "").strip()
+        if not query:
+            return JSONResponse(status_code=400, content={"rows": [], "error": "sql is required"})
+        max_rows = _clamp_rows(body.get("max_rows", 100))
         res = execute_safe_sql(query, max_rows=max_rows)
         return JSONResponse(content=res)
     except Exception as e:
@@ -54,9 +64,11 @@ async def sql_query_post(request: Request):
 @app.get("/api/tools/sql_query")
 def sql_query_get(sql: str = "", query: str = "", max_rows: int = 100):
     """GET variant of Universal Dynamic SQL execution."""
-    target_sql = sql or query
+    target_sql = (sql or query).strip()
+    if not target_sql:
+        return JSONResponse(status_code=400, content={"rows": [], "error": "sql is required"})
     try:
-        res = execute_safe_sql(target_sql, max_rows=max_rows)
+        res = execute_safe_sql(target_sql, max_rows=_clamp_rows(max_rows))
         return JSONResponse(content=res)
     except Exception as e:
         return JSONResponse(status_code=500, content={"rows": [], "error": str(e)})
@@ -76,6 +88,8 @@ async def chat_stream(request: Request):
         user_message = body.get("message", "").strip()
         if not user_message:
             return JSONResponse(status_code=400, content={"error": "message is required"})
+        if len(user_message) > 2000:
+            return JSONResponse(status_code=400, content={"error": "message too long (max 2000 chars)"})
 
         return StreamingResponse(
             stream_openui_chain(user_message),
