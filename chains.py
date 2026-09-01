@@ -73,15 +73,24 @@ def load_system_prompt() -> str:
     return "You are an AI financial assistant generating OpenUI declarative code."
 
 
-async def _stream_openai_compatible(base_url: str, api_key: str, payload: Dict[str, Any], err_prefix: str) -> AsyncGenerator[str, None]:
-    """Shared helper for OpenAI-compatible streaming (Groq, OpenCode)."""
+async def _stream_openai_compatible(
+    base_url: str,
+    api_key: str,
+    payload: Dict[str, Any],
+    err_prefix: str,
+    extra_headers: Optional[Dict[str, str]] = None,
+) -> AsyncGenerator[str, None]:
+    """Shared helper for OpenAI-compatible streaming endpoints (Groq, OpenCode, OpenRouter)."""
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    if extra_headers:
+        headers.update(extra_headers)
+
     max_retries = 3
     for attempt in range(max_retries):
         async with httpx.AsyncClient(timeout=60.0) as client:
             async with client.stream("POST", f"{base_url}/chat/completions", headers=headers, json=payload) as response:
                 if response.status_code == 429 and attempt < max_retries - 1:
-                    await asyncio.sleep(2.5 * (1 if err_prefix == "Groq" else 1))
+                    await asyncio.sleep(2.5 * (attempt + 1))
                     continue
                 if response.status_code != 200:
                     err_body = await response.aread()
@@ -218,10 +227,8 @@ async def stream_openrouter(prompt_text: str, query: str) -> AsyncGenerator[str,
         return
 
     headers = {
-        "Authorization": f"Bearer {api_key}",
         "HTTP-Referer": "http://localhost:8001",
         "X-Title": "MF Saarthi OpenUI",
-        "Content-Type": "application/json",
     }
     payload: Dict[str, Any] = {
         "model": OPENROUTER_MODEL,
@@ -235,35 +242,8 @@ async def stream_openrouter(prompt_text: str, query: str) -> AsyncGenerator[str,
     if OPENROUTER_REASONING_EFFORT:
         payload["reasoning_effort"] = OPENROUTER_REASONING_EFFORT
 
-    max_retries = 3
-    for attempt in range(max_retries):
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream("POST", f"{OPENROUTER_BASE_URL}/chat/completions", headers=headers, json=payload) as response:
-                if response.status_code == 429 and attempt < max_retries - 1:
-                    await asyncio.sleep(2.5 * (attempt + 1))
-                    continue
-                if response.status_code != 200:
-                    err_body = await response.aread()
-                    yield f'root = Column([TextContent("OpenRouter API error {response.status_code}: {err_body.decode(errors="ignore")}")])'
-                    return
-                try:
-                    async for line in response.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        data_str = line[6:].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                            delta = chunk.get("choices", [{}])[0].get("delta", {})
-                            content = delta.get("content") or delta.get("content", "")
-                            if content:
-                                yield content
-                        except Exception:
-                            continue
-                    return
-                except GeneratorExit:
-                    return
+    async for chunk in _stream_openai_compatible(OPENROUTER_BASE_URL, api_key, payload, "OpenRouter", extra_headers=headers):
+        yield chunk
 
 
 

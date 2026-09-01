@@ -3,7 +3,6 @@ import { ChatMessage } from "./ChatMessage";
 import {
   Sparkles,
   Bot,
-  User,
   Plus,
   Trash2,
   PieChart,
