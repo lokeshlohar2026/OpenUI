@@ -64,6 +64,7 @@ function generateFullDbSchemaPrompt(): string {
     return "";
   }
   const data = JSON.parse(readFileSync(schemaPath, "utf-8"));
+  const ALLOWED_TABLES = new Set(["mfi360_funds","mfi360_fund_portfolio_holdings","mfi360_scheme_valuation_metrics","mfi360_fund_aum_history","mfi360_scheme_risk_ratios","mfi360_fund_debt_metrics","mfi360_fund_manager_tenures","mfi360_fund_plans","mfi360_fund_managers"]);
   const EXCLUDED_TABLES = new Set(["cleaner_cache", "grok_connections"]);
 
   const lines: string[] = [
@@ -102,7 +103,7 @@ function generateFullDbSchemaPrompt(): string {
   let tableIndex = 1;
   data.tables.forEach((t: any) => {
     const tname = t.table_name;
-    if (EXCLUDED_TABLES.has(tname)) {
+    if (EXCLUDED_TABLES.has(tname) || !ALLOWED_TABLES.has(tname)) {
       return;
     }
     const tdesc = t.description || `Table: ${tname}`;
@@ -112,8 +113,8 @@ function generateFullDbSchemaPrompt(): string {
     t.columns.forEach((c: any) => {
       const pk = c.primary_key ? ", PK" : "";
       const fk = c.foreign_key ? `, FK -> ${c.foreign_key}` : "";
-      const sampleStr = c.samples && c.samples.length > 0 ? ` (Samples: ${JSON.stringify(c.samples.slice(0, 3))})` : "";
-      lines.push(`     - ${c.name} [${c.type}${pk}${fk}]${sampleStr}`);
+      // Trim Samples for token efficiency – keep name/type only (was ~8k chars)
+      lines.push(`     - ${c.name} [${c.type}${pk}${fk}]`);
     });
     lines.push("");
     tableIndex++;
@@ -179,9 +180,13 @@ DOMAIN SKILLS AND SQL QUERY RECIPES:
 SKILL 1: CORE SCHEME RESOLUTION
 - Rule: Always query mfi360_funds using the core fund name. Strip 'Direct', 'Regular', 'Growth', 'IDCW', 'Plan', or 'Mutual Fund' words.
 - Rule: Bluechip / Large Cap: In the AMFI master database, Bluechip schemes are classified and named as 'Large Cap Fund' (e.g. 'SBI Large Cap Fund', 'Axis Large Cap Fund', 'ICICI Prudential Large Cap Fund'). Always search for '%Large Cap%' or '%Large%' when user mentions 'Bluechip'.
+- Rule: AMC Name Must Be Included: When user mentions AMC (HDFC, SBI, Nippon, PPFAS/Parag Parikh, ABSL/Aditya Birla, Mirae, Kotak, Axis, UTI, Franklin etc.) ALWAYS add fund_name ILIKE '%AMC%' AND fund_name ILIKE '%Category%' (e.g. hdfc flexi cap -> WHERE fund_name ILIKE '%HDFC%' AND fund_name ILIKE '%Flexi Cap%' ORDER BY aum_cr DESC LIMIT 1). Never use only '%Flexi Cap%' when user said 'hdfc flexi cap'.
+- Rule: Lowercase resilience: User may type 'hdfc flexi cap fund using weight and pe' lowercase with alias 'weight'->percentage_in_net_asset, 'pe'->price_to_earnings – still include HDFC in WHERE.
 - Rule: Always add ORDER BY aum_cr DESC NULLS LAST LIMIT 1 to prioritize the flagship primary fund.
 - Canonical Recipe:
   WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE (fund_name ILIKE '%FundName%' OR (fund_name ILIKE '%Large Cap%' AND '%FundName%' ILIKE '%Bluechip%')) ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
+- Canonical Multi-Clause Example (HDFC Flexi Cap):
+  WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%HDFC%' AND fund_name ILIKE '%Flexi Cap%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
 
 SKILL 2: PORTFOLIO HOLDINGS & MARKET CAP ALLOCATION
 - Mandatory Visuals: Render BOTH a PieChart for Market Cap Split AND a HorizontalBarChart for Top 10 Stock Holdings side-by-side in a Grid(2, [cardPie, cardBar])!
@@ -225,7 +230,7 @@ SKILL 5: FUND VS CATEGORY BENCHMARK COMPARISON
   SELECT * FROM fund_risk UNION ALL SELECT * FROM cat_risk;
 
 SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MULTI-LINE AUM)
-- 1. Multi-Line AUM Trajectory (FundLineChart with 2 lines):
+- 1. Multi-Line AUM Trajectory (FundLineChart with 2 lines) – LEGEND MUST SHOW FUND NAMES, NOT fund1/fund2:
   WITH f1 AS (
       SELECT aum_date, aum_cr AS f1_aum FROM mfi360_fund_aum_history WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
   ),
@@ -233,16 +238,17 @@ SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MU
       SELECT aum_date, aum_cr AS f2_aum FROM mfi360_fund_aum_history WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
   )
   SELECT COALESCE(f1.aum_date, f2.aum_date) AS date,
-         ROUND(f1.f1_aum::numeric, 2) AS fund1_aum,
-         ROUND(f2.f2_aum::numeric, 2) AS fund2_aum
+         ROUND(f1.f1_aum::numeric, 2) AS "Fund1 AUM",
+         ROUND(f2.f2_aum::numeric, 2) AS "Fund2 AUM"
   FROM f1 FULL OUTER JOIN f2 ON f1.aum_date = f2.aum_date ORDER BY date ASC;
+  IMPORTANT: Replace "Fund1 AUM"/"Fund2 AUM" aliases with the actual short fund names from the user query (e.g. for 'Parag Parikh vs HDFC Flexi Cap', use ROUND(f1.f1_aum::numeric,2) AS "Parag Parikh AUM", ROUND(f2.f2_aum::numeric,2) AS "HDFC Flexi Cap AUM" – this makes the legend and XAxis tooltip show fund names below the graph instead of generic fund1/fund2).
 
-- 2. Overlapping Stock Holdings (Grouped HorizontalBarChart):
+- 2. Overlapping Stock Holdings (Grouped HorizontalBarChart) – deduplicate by company_name:
   WITH h1 AS (
-      SELECT company_name, percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1))
+      SELECT company_name, MAX(percentage_in_net_asset) AS percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)) GROUP BY company_name
   ),
   h2 AS (
-      SELECT company_name, percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1))
+      SELECT company_name, MAX(percentage_in_net_asset) AS percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)) GROUP BY company_name
   )
   SELECT h1.company_name,
          ROUND(h1.percentage_in_net_asset::numeric, 2) AS fund1_weight,
@@ -252,6 +258,7 @@ SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MU
 
 SKILL 7: FUND SCREENER FUNNEL (FUNNEL CHART)
 - Mandatory Visual: FunnelChart(screenerQuery.rows, "name", "value") for screening drop-off stages.
+- Formatting: Labels MUST have space after number and before parenthesis: '1. Category Universe' not '1.CategoryUniverse', '3. Low Turnover (<50%)' not '3. Low Turnover(<50%)'.
 - Canonical Recipe:
   SELECT '1. Category Universe' AS name, COUNT(*) AS value FROM mfi360_funds WHERE sub_nature = 'Small Cap Fund'
   UNION ALL
@@ -268,10 +275,11 @@ SKILL 9: DEBT & FIXED INCOME ANALYTICS (YTM, MATURITY, DURATION)
   SELECT ROUND(yield_to_maturity::numeric, 2) AS ytm, ROUND(average_maturity::numeric, 2) AS avg_maturity, average_maturity_unit, ROUND(modified_duration::numeric, 2) AS modified_duration, modified_duration_unit FROM mfi360_fund_debt_metrics WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY portfolio_date DESC LIMIT 1;
 
 SKILL 10: SCHEME PLANS & FUND MANAGERS
-- Canonical Plans Recipe:
-  SELECT scheme_name, plan, option, expense_ratio, min_invest, exit_load, isin FROM mfi360_fund_plans WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY plan, option
-- Canonical Manager Recipe:
-  SELECT m.name AS manager_name, m.educational_qualification, t.from_date, t.to_date FROM mfi360_funds f JOIN mfi360_fund_manager_tenures t ON f.fund_id = t.fund_id JOIN mfi360_fund_managers m ON t.fund_manager_id = m.fund_manager_id WHERE f.fund_name ILIKE '%FundName%' ORDER BY t.from_date DESC;`;
+- Canonical Plans Recipe (EXPENSE RATIO IS NOT AVAILABLE IN DB – NEVER SELECT expense_ratio, NEVER SHOW TER MetricCards; use only 5 columns):
+  SELECT scheme_name, plan, option, min_invest, exit_load, isin FROM mfi360_fund_plans WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY plan, option
+- Rule: NEVER generate MetricCard("Direct Plan TER", ... ) or MetricCard("Regular Plan TER", ...) or BarChart/Expense & Investment Comparison for expense_ratio – we have no data (DB expense_ratio is NULL/0 for all). If user asks TER/expense, show Table with min_invest+exit_load+isin only and explain "Expense ratio not available" in Callout subtext.
+- Canonical Manager Recipe (Active only – filter to_date IS NULL to avoid 40-row duplicates and future placeholders):
+  SELECT DISTINCT m.name AS manager_name, m.educational_qualification, t.from_date, COALESCE(t.to_date::text, '—') AS to_date FROM mfi360_funds f JOIN mfi360_fund_manager_tenures t ON f.fund_id = t.fund_id JOIN mfi360_fund_managers m ON t.fund_manager_id = m.fund_manager_id WHERE f.fund_name ILIKE '%FundName%' AND t.to_date IS NULL ORDER BY t.from_date DESC;`;
 
 const syntacticRulesPrompt = `CRITICAL SYNTACTIC RULES:
 0. MANDATORY 3-STAGE CODE ORDER (DATA FIRST, UI SECOND, ROOT LAST):
@@ -283,6 +291,8 @@ const syntacticRulesPrompt = `CRITICAL SYNTACTIC RULES:
      • kpiAum = MetricCard("Fund AUM", q.rows, "aum_cr", "₹ Cr — Scheme AUM")
      • kpiTurnover = MetricCard("Portfolio Turnover", q.rows, "portfolio_turnover_ratio", "% Annual Churn")
      • kpiPE = MetricCard("Portfolio P/E", valQuery.rows, "pe_ratio", "Weighted Price to Earnings")
+     • kpiRisk = MetricCard("Riskometer", q.rows, "riskometer", "SEBI Risk Level")  // string column Very High – MetricCard handles strings
+     • kpiCount = MetricCard("Funds Ranked", q.rows, "fund_name", "Count") // for counts use rows + count-like label
 2. Query Initial Value: Always supply fallback initial value: Query('sql_query', { sql: '...' }, { rows: [] })
 3. In Column([...]), Grid(...), Container(...), and Row([...]), ONLY place VISUAL components. NEVER put Query variables inside Column/Row/Grid!
 4. Strict Macro Restrictions: Only @Sum, @Count, @Avg, @Round, @FormatNumber are allowed. Never use @Max, @Min, @First, @Last.
@@ -292,26 +302,15 @@ const syntacticRulesPrompt = `CRITICAL SYNTACTIC RULES:
 8. NEVER insert mock, sample, or dummy objects in Query(). Default 3rd argument MUST ALWAYS be strictly empty: {"rows": []}.
 9. NEVER tweak or invent column names. Use exact column names from schema.
 
-COMPONENT PALETTE:
-• PieChart: PieChart(query.rows, "name", "value") for donut market cap & asset splits.
-• BarChart: BarChart(query.rows, "name", "value") for vertical columns comparing discrete categories (3-5 items) and yearly return bars.
-• HorizontalBarChart: HorizontalBarChart(query.rows, "company_name", "percentage_in_net_asset") for ranked holdings and multi-fund overlap comparisons.
-• FundLineChart: FundLineChart(query.rows, "date") for multi-line comparisons (2+ funds).
-• AreaChart: AreaChart(query.rows, "date", "aum") for wealth & AUM growth curves.
-• RadarChart: RadarChart(query.rows) for multi-dimensional risk matrices (Sharpe, Beta, Std Dev).
-• RadialChart: RadialChart(query.rows, "name", "value", 100) for riskometer & ESG gauge meters.
-• FunnelChart: FunnelChart(query.rows, "name", "value") for screening funnels.
-• SankeyChart: SankeyChart(query.rows) for capital and sector allocation flow mapping.
-• MetricCard: MetricCard("Label", query.rows, "column_name", "Subtext") or MetricCard("Label", "Literal Value", "Subtext") for high-impact KPI summary badges.
-• Grid: Grid(2, [card1, card2]) or Grid(3, [card1, card2, card3]) for responsive side-by-side visual comparisons.
-• Card: Card("Section Title", [chart1, chart2], "Optional footer note") to frame visual charts.
-• Callout: Callout("Disclaimer: Summary...", "info" | "warning") for brief context.`;
+COMPONENT PALETTE: See 01_library_ast.txt:28 signatures – omitted here for token efficiency (duplicate).`;
 
 try {
   const mod = await vite.ssrLoadModule("/src/openui-library.tsx");
-  const libraryAstPrompt: string = mod.myLibrary.prompt({
+  let libraryAstPrompt: string = mod.myLibrary.prompt({
     tools,
   });
+  // Token trim: remove Data Workflow WRONG vs RIGHT example (~1.2k chars, ~300 tokens) – keep final sentence only
+  libraryAstPrompt = libraryAstPrompt.replace(/WRONG — you called[\s\S]*?Everything derives from the Query/s, "Everything derives from the Query");
 
   // 1. Write individual modular prompt files into prompts/
   writeFileSync(join(promptsDir, "01_library_ast.txt"), libraryAstPrompt.trim(), "utf-8");

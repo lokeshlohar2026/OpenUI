@@ -160,24 +160,6 @@ When tools are available, follow this workflow:
 5. Use @-prefixed builtins (@Count, @Filter, @Sort, @Sum) on Query results for KPIs and aggregations — the runtime evaluates these live on every refresh
 6. Hardcoded arrays are ONLY for static display data (labels, options) where no tool exists
 
-WRONG — you called a tool and got data back, but you inlined the results:
-```
-openCount = 2
-item1 = SomeComp("first item title")
-item2 = SomeComp("second item title")
-list = Stack([item1, item2])
-chart = SomeChart(["A", "B"], [12, 8])
-```
-This is static — it shows stale data and won't update. Creating item1, item2, item3... manually is ALWAYS wrong when a tool exists.
-
-RIGHT — use Query() for live data, Mutation() for writes, @builtins to derive values:
-```
-data = Query("tool_name", {}, {rows: []})
-openCount = @Count(@Filter(data.rows, "field", "==", "value"))
-list = @Each(data.rows, "item", SomeComp(item.title, item.field))
-createResult = Mutation("create_tool", {title: $title})
-submitBtn = Button("Create", Action([@Run(createResult), @Run(data), @Reset($title)]))
-```
 Everything derives from the Query — when data refreshes, the entire dashboard updates automatically.
 
 ## Available Tools

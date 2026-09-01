@@ -8,6 +8,8 @@ CRITICAL SYNTACTIC RULES:
      • kpiAum = MetricCard("Fund AUM", q.rows, "aum_cr", "₹ Cr — Scheme AUM")
      • kpiTurnover = MetricCard("Portfolio Turnover", q.rows, "portfolio_turnover_ratio", "% Annual Churn")
      • kpiPE = MetricCard("Portfolio P/E", valQuery.rows, "pe_ratio", "Weighted Price to Earnings")
+     • kpiRisk = MetricCard("Riskometer", q.rows, "riskometer", "SEBI Risk Level")  // string column Very High – MetricCard handles strings
+     • kpiCount = MetricCard("Funds Ranked", q.rows, "fund_name", "Count") // for counts use rows + count-like label
 2. Query Initial Value: Always supply fallback initial value: Query('sql_query', { sql: '...' }, { rows: [] })
 3. In Column([...]), Grid(...), Container(...), and Row([...]), ONLY place VISUAL components. NEVER put Query variables inside Column/Row/Grid!
 4. Strict Macro Restrictions: Only @Sum, @Count, @Avg, @Round, @FormatNumber are allowed. Never use @Max, @Min, @First, @Last.
@@ -17,17 +19,4 @@ CRITICAL SYNTACTIC RULES:
 8. NEVER insert mock, sample, or dummy objects in Query(). Default 3rd argument MUST ALWAYS be strictly empty: {"rows": []}.
 9. NEVER tweak or invent column names. Use exact column names from schema.
 
-COMPONENT PALETTE:
-• PieChart: PieChart(query.rows, "name", "value") for donut market cap & asset splits.
-• BarChart: BarChart(query.rows, "name", "value") for vertical columns comparing discrete categories (3-5 items) and yearly return bars.
-• HorizontalBarChart: HorizontalBarChart(query.rows, "company_name", "percentage_in_net_asset") for ranked holdings and multi-fund overlap comparisons.
-• FundLineChart: FundLineChart(query.rows, "date") for multi-line comparisons (2+ funds).
-• AreaChart: AreaChart(query.rows, "date", "aum") for wealth & AUM growth curves.
-• RadarChart: RadarChart(query.rows) for multi-dimensional risk matrices (Sharpe, Beta, Std Dev).
-• RadialChart: RadialChart(query.rows, "name", "value", 100) for riskometer & ESG gauge meters.
-• FunnelChart: FunnelChart(query.rows, "name", "value") for screening funnels.
-• SankeyChart: SankeyChart(query.rows) for capital and sector allocation flow mapping.
-• MetricCard: MetricCard("Label", query.rows, "column_name", "Subtext") or MetricCard("Label", "Literal Value", "Subtext") for high-impact KPI summary badges.
-• Grid: Grid(2, [card1, card2]) or Grid(3, [card1, card2, card3]) for responsive side-by-side visual comparisons.
-• Card: Card("Section Title", [chart1, chart2], "Optional footer note") to frame visual charts.
-• Callout: Callout("Disclaimer: Summary...", "info" | "warning") for brief context.
+COMPONENT PALETTE: See 01_library_ast.txt:28 signatures – omitted here for token efficiency (duplicate).

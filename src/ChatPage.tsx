@@ -21,6 +21,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: string;
+  elapsedMs?: number;
 }
 
 const SUGGESTIONS = [
@@ -100,6 +101,7 @@ export default function ChatPage() {
 
     const assistantMsgId = crypto.randomUUID();
     const assistantTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const queryStartTime = performance.now();
 
     try {
       const base = (import.meta as any).env?.VITE_API_BASE_URL || "http://127.0.0.1:8001";
@@ -124,6 +126,7 @@ export default function ChatPage() {
         setCurrentStream(accumulated);
       }
 
+      const elapsedMs = Math.round(performance.now() - queryStartTime);
       setMessages((prev) => [
         ...prev,
         {
@@ -131,11 +134,13 @@ export default function ChatPage() {
           role: "assistant",
           content: accumulated,
           timestamp: assistantTimestamp,
+          elapsedMs,
         },
       ]);
       setCurrentStream("");
     } catch (err) {
       console.error("Streaming error:", err);
+      const elapsedMs = Math.round(performance.now() - queryStartTime);
       setMessages((prev) => [
         ...prev,
         {
@@ -143,6 +148,7 @@ export default function ChatPage() {
           role: "assistant",
           content: `root = Column([TextContent("Error: Unable to load fund data from backend. Please verify FastAPI is running at :8001")])`,
           timestamp: assistantTimestamp,
+          elapsedMs,
         },
       ]);
     }
@@ -340,7 +346,7 @@ export default function ChatPage() {
                   </div>
                 ) : (
                   <div className="w-full">
-                    <ChatMessage text={msg.content} timestamp={msg.timestamp} />
+                    <ChatMessage text={msg.content} timestamp={msg.timestamp} elapsedMs={msg.elapsedMs} />
                   </div>
                 )}
               </div>

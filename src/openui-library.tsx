@@ -169,6 +169,34 @@ function Card(fullProps: any) {
     footer = stringValues[1] as string;
   }
 
+  // Frontend-only: hide Card completely if its visual children would be empty (user requested to remove no-record containers, not backend)
+  if (children) {
+    const isEmptyData = (data: any): boolean => {
+      if (data === null || data === undefined) return true;
+      try {
+        const rows = extractRows(data, undefined);
+        return rows.length === 0;
+      } catch {
+        return false;
+      }
+    };
+    const checkNodeEmpty = (node: any): boolean => {
+      if (!node) return false;
+      if (Array.isArray(node)) {
+        // Hide only if every element in array is empty-data visual
+        return node.length > 0 && node.every((n: any) => checkNodeEmpty(n));
+      }
+      if (typeof node === "object" && node !== null) {
+        const d = (node as any).props?.data ?? (node as any).data;
+        if (d !== undefined) return isEmptyData(d);
+        const inner = (node as any).props?.children ?? (node as any).children;
+        if (inner) return checkNodeEmpty(inner);
+      }
+      return false;
+    };
+    if (checkNodeEmpty(children)) return null;
+  }
+
   return (
     <div className="w-full rounded-2xl border border-zinc-200/90 bg-white shadow-2xs overflow-hidden my-3 transition-all hover:border-zinc-300/90">
       {title && (
@@ -232,6 +260,11 @@ function formatDisplayMetric(val: any): { display: string; isNumeric: boolean } 
   if (val === undefined || val === null || val === "" || val === "—") {
     return { display: "—", isNumeric: false };
   }
+  if (Array.isArray(val)) {
+    if (val.length === 0) return { display: "—", isNumeric: false };
+    if (typeof val[0] === "object" && val[0] !== null) return { display: String(val.length), isNumeric: true };
+    return { display: String(val.length), isNumeric: true };
+  }
   if (typeof val === "number") {
     if (Object.is(val, -0) || val === 0) return { display: "0", isNumeric: true };
     if (isNaN(val)) return { display: "—", isNumeric: false };
@@ -241,18 +274,38 @@ function formatDisplayMetric(val: any): { display: string; isNumeric: boolean } 
     return { display: formatted, isNumeric: true };
   }
   let s = String(val).trim();
+  if ((s.startsWith('"') && s.endsWith('"') && s.length > 1) || (s.startsWith("'") && s.endsWith("'") && s.length > 1)) {
+    s = s.slice(1, -1).trim();
+  }
+  if (s.includes("[object Object]")) {
+    return { display: "—", isNumeric: false };
+  }
   if (s === "-0" || s === "-0.0" || s === "-0.00" || s === "₹-0" || s === "₹-0.0" || s === "₹-0.00" || s.startsWith("-0")) {
     s = s.replace(/^-0(\.0+)?/, "0");
   }
   if (s.includes("undefined") || s.includes("null") || s === "NaN" || s === "₹NaN Cr" || s === "NaN%") {
     return { display: "—", isNumeric: false };
   }
+  if (/[a-zA-Z]/.test(s) && isNaN(Number(s)) && !/^[0-9.,\-]+$/.test(s.replace(/₹|Cr|%|, /g, "").trim())) {
+    return { display: s, isNumeric: false };
+  }
+  const numCandidate = s.replace(/[^0-9.-]+/g, "");
+  if (numCandidate !== "" && !isNaN(Number(numCandidate)) && /^[0-9.,\-]+$/.test(s.replace(/₹|Cr|%|\s/g, ""))) {
+    const n = Number(numCandidate);
+    const formatted = Number.isInteger(n) ? n.toLocaleString("en-IN") : n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return { display: formatted, isNumeric: true };
+  }
   return { display: s, isNumeric: !isNaN(Number(s.replace(/[^0-9.-]+/g, ""))) };
 }
 
 function MetricCard(fullProps: any) {
   const props = fullProps?.props ?? fullProps ?? {};
-
+  // Never show expense ratio – DB has no data (all 0/NULL) – hide TER cards entirely
+  const earlyLabel = String(props.label || "").toLowerCase();
+  const earlyCol = String(props.column || props.key || props.field || "").toLowerCase();
+  if (earlyLabel.includes("ter") || earlyLabel.includes("expense") || earlyCol.includes("expense")) {
+    return null;
+  }
   const rawValues = Object.values(props).filter((v) => v !== null && v !== undefined && v !== "");
 
   let dataRows: any[] = [];
@@ -276,6 +329,14 @@ function MetricCard(fullProps: any) {
     targetKey = stringValues.find((s) => s in sample);
   }
   if (!targetKey && sample) {
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    for (const s of stringValues) {
+      const normS = normalize(s);
+      const found = Object.keys(sample).find((k) => normalize(k) === normS || normalize(k).includes(normS) || normS.includes(normalize(k)));
+      if (found) { targetKey = found; break; }
+    }
+  }
+  if (!targetKey && sample) {
     targetKey = Object.keys(sample).find((k) => typeof sample[k] === "number" || (!isNaN(Number(sample[k])) && sample[k] !== null && sample[k] !== ""));
   }
 
@@ -285,18 +346,75 @@ function MetricCard(fullProps: any) {
 
   let finalNumericVal: any = props.value;
 
-  if (sample && targetKey && targetKey in sample) {
-    const isAvg = /turnover|yield|pe|pb|ratio|beta|sharpe|percent|%/i.test(label);
-    if (isAvg && dataRows.length > 1) {
-      const sum = dataRows.reduce((acc, r) => acc + (Number(r[targetKey]) || 0), 0);
-      finalNumericVal = sum / dataRows.length;
-    } else if (dataRows.length === 1) {
-      finalNumericVal = Number(sample[targetKey]);
+  if (sample && targetKey) {
+    let actualKey: string | undefined = targetKey;
+    if (!(actualKey in sample)) {
+      const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const normTarget = normalize(actualKey);
+      const found = Object.keys(sample).find((k) => normalize(k) === normTarget);
+      if (found) actualKey = found;
+      else actualKey = undefined;
+    }
+    if (actualKey && actualKey in sample) {
+      const rawVal = (sample as any)[actualKey];
+      const isTextValue = typeof rawVal === "string" && /[a-zA-Z]/.test(rawVal) && isNaN(Number(rawVal)) && !String(rawVal).match(/^[0-9.,\-]+$/);
+      const isStringNonNumeric = typeof rawVal === "string" && String(rawVal).trim() !== "" && isNaN(Number(String(rawVal).replace(/[^0-9.-]/g, "")));
+      if (isTextValue || (typeof rawVal === "string" && isStringNonNumeric && /[a-zA-Z]/.test(String(rawVal)))) {
+        finalNumericVal = rawVal;
+      } else {
+        const isAvg = /average|mean|avg|turnover|yield|pe|pb|ratio|beta|sharpe|percent|%/i.test(label);
+        const isHighest = /highest|max/i.test(label);
+        if (isAvg && !isHighest && dataRows.length > 1) {
+          const sum = dataRows.reduce((acc, r) => acc + (Number((r as any)[actualKey!]) || 0), 0);
+          finalNumericVal = sum / dataRows.length;
+        } else if (dataRows.length === 1) {
+          const num = Number((sample as any)[actualKey]);
+          finalNumericVal = isNaN(num) ? (sample as any)[actualKey] : num;
+        } else {
+          if (isHighest) {
+            const num = Number((sample as any)[actualKey]);
+            finalNumericVal = isNaN(num) ? (sample as any)[actualKey] : num;
+          } else {
+            const sum = dataRows.reduce((acc, r) => acc + (Number((r as any)[actualKey!]) || 0), 0);
+            finalNumericVal = sum;
+          }
+        }
+      }
     } else {
-      finalNumericVal = dataRows.reduce((acc, r) => acc + (Number(r[targetKey]) || 0), 0);
+      const countLike = /count|ranked|screened|qualifying|managers?|months?|stocks?|funds?|holdings/i.test(label);
+      if (countLike && dataRows.length > 0) {
+        finalNumericVal = dataRows.length;
+      } else {
+        const numericKey = Object.keys(sample).find((k) => typeof (sample as any)[k] === "number" || (!isNaN(Number((sample as any)[k])) && (sample as any)[k] !== null && (sample as any)[k] !== ""));
+        if (numericKey) {
+          const num = Number((sample as any)[numericKey]);
+          finalNumericVal = isNaN(num) ? (sample as any)[numericKey] : num;
+        } else {
+          finalNumericVal = dataRows.length;
+        }
+      }
     }
   } else if (!sample && (typeof props.value === "string" || typeof props.value === "number")) {
     finalNumericVal = props.value;
+  } else if (dataRows.length > 0 && !targetKey) {
+    const countLike = /count|ranked|screened|qualifying|managers?|months?|stocks?|funds?/i.test(label);
+    finalNumericVal = countLike ? dataRows.length : dataRows.length;
+  }
+
+  if (typeof finalNumericVal === "string") {
+    let s = finalNumericVal.trim();
+    if ((s.startsWith('"') && s.endsWith('"') && s.length > 1) || (s.startsWith("'") && s.endsWith("'") && s.length > 1)) {
+      s = s.slice(1, -1).trim();
+    }
+    const num = Number(s.replace(/,/g, ""));
+    if (!isNaN(num) && /^[0-9.,\-]+$/.test(s)) {
+      finalNumericVal = num;
+    } else {
+      finalNumericVal = s;
+    }
+  }
+  if (Array.isArray(finalNumericVal) && finalNumericVal.length > 0 && typeof finalNumericVal[0] === "object") {
+    finalNumericVal = finalNumericVal.length;
   }
 
   const { display } = formatDisplayMetric(finalNumericVal);
@@ -346,7 +464,7 @@ function FundLineChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No historical performance records found for this scheme." />;
+    return null;;
   }
 
   const sample = rows[0] || {};
@@ -437,7 +555,7 @@ function AreaChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No AUM history records found for this scheme." />;
+    return null;;
   }
 
   const sample = rows[0] || {};
@@ -493,7 +611,7 @@ function PieChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No market cap allocation data found for this scheme." />;
+    return null;;
   }
 
   const sample = (rows[0] as Record<string, any>) || {};
@@ -568,7 +686,7 @@ function HorizontalBarChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No portfolio holdings found for this scheme." />;
+    return null;;
   }
 
   const sample = rows[0] || {};
@@ -590,10 +708,27 @@ function HorizontalBarChart(fullProps: any) {
     });
   });
 
-  const numericKeys = Array.from(discoveredNumericKeys);
+  // Filter out debt coupon/maturity noise and screener double-series clutter
+  let numericKeys = Array.from(discoveredNumericKeys).filter(k => !["coupon_rate","maturity_date","quantity","market_value"].includes(k.toLowerCase()));
+  // For screener (fund_name label + both aum & turnover) keep only aum for single-series bar
+  if (numericKeys.includes("aum_cr") && numericKeys.includes("portfolio_turnover_ratio") && labelKey === "fund_name") {
+    numericKeys = numericKeys.filter(k => k === "aum_cr");
+  }
+  // Exclude 0-only coupon noise if present
+  if (numericKeys.includes("percentage_in_net_asset") && numericKeys.includes("coupon_rate")) {
+    numericKeys = numericKeys.filter(k => k !== "coupon_rate");
+  }
   const isMultiSeries = numericKeys.length > 1;
 
-  const normalizedRows = rows.map((r) => {
+  // Deduplicate rows by labelKey to avoid duplicate Y-ticks (e.g. overlapping holdings with same company_name multiple instruments)
+  const dedupedMap = new Map<string, Record<string, any>>();
+  rows.forEach((r) => {
+    const key = String((r as any)[labelKey] ?? "");
+    if (!dedupedMap.has(key)) dedupedMap.set(key, r);
+  });
+  const dedupedRows = Array.from(dedupedMap.values());
+
+  const normalizedRows = dedupedRows.map((r) => {
     const item: Record<string, any> = { ...r };
     numericKeys.forEach((k) => {
       item[k] = Number(r[k]) || 0;
@@ -607,6 +742,11 @@ function HorizontalBarChart(fullProps: any) {
       .replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
+  // Per-key percent: only turnover/yield/deviation/weight/percent are %, sharpe/beta are ratio-not-percent, aum is not %
+  const isPercentChart = numericKeys.some((k) => /percent|percentage|weight|turnover|yield|deviation/i.test(k)) && !numericKeys.some((k) => /sharpe|beta/i.test(k)) && !numericKeys.some((k) => /aum/i.test(k));
+  const xUnit = isPercentChart ? "%" : "";
+  const tooltipPercent = isPercentChart ? "%" : "";
+
   return (
     <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2">
       <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 mb-3">
@@ -614,7 +754,7 @@ function HorizontalBarChart(fullProps: any) {
       </h4>
       <ResponsiveContainer width="100%" height={Math.max(260, normalizedRows.length * (isMultiSeries ? 48 : 34))}>
         <RechartsBarChart data={normalizedRows} layout="vertical" margin={{ left: 10, right: 16 }}>
-          <XAxis type="number" stroke="#94a3b8" fontSize={11} unit="%" />
+          <XAxis type="number" stroke="#94a3b8" fontSize={11} unit={xUnit} />
           <YAxis
             type="category"
             dataKey={labelKey}
@@ -625,7 +765,7 @@ function HorizontalBarChart(fullProps: any) {
           />
           <Tooltip
             contentStyle={{ backgroundColor: "#ffffff", borderColor: "#e4e4e7", borderRadius: 8, fontSize: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}
-            formatter={(v: any, name: any) => [`${v}%`, formatKeyName(String(name))]}
+            formatter={(v: any, name: any) => [`${v}${tooltipPercent}`, formatKeyName(String(name))]}
           />
           {isMultiSeries && <Legend wrapperStyle={{ fontSize: 11 }} />}
           {isMultiSeries ? (
@@ -664,7 +804,7 @@ function BarChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No distribution records found." />;
+    return null;;
   }
 
   const sample = rows[0] || {};
@@ -768,8 +908,8 @@ function formatDisplayValue(val: any, col: string): string {
     }
   }
 
-  // Percentage / Ratio formatting
-  if (typeof val === "number" && (colLower.includes("percent") || colLower.includes("ratio") || colLower.includes("expense"))) {
+  // Percentage / Ratio formatting - only for turnover/yield/percent/standard_deviation, NOT sharpe/beta/expense (expense_ratio hidden)
+  if (typeof val === "number" && (colLower.includes("percent") || colLower.includes("turnover") || colLower.includes("yield") || colLower.includes("deviation"))) {
     return `${val}%`;
   }
 
@@ -793,7 +933,7 @@ function DataTable(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No records found in database." />;
+    return null;;
   }
 
   const columnsProp = props.columns;
@@ -819,7 +959,7 @@ function DataTable(fullProps: any) {
     const allKeys = new Set<string>();
     rows.forEach((r: any) => {
       Object.keys(r || {}).forEach((k) => {
-        if (k !== "fund_id" && k !== "scheme_id") {
+        if (k !== "fund_id" && k !== "scheme_id" && k !== "expense_ratio") {
           allKeys.add(k);
         }
       });
@@ -955,7 +1095,7 @@ function RadarChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No radar comparison metrics available." />;
+    return null;;
   }
 
   return (
@@ -1004,7 +1144,7 @@ function RadialChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No radial score data available." />;
+    return null;;
   }
 
   const sample = rawData[0] || {};
@@ -1049,7 +1189,7 @@ function FunnelChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No funnel data available." />;
+    return null;;
   }
 
   const sample = rawData[0] || {};
@@ -1129,7 +1269,7 @@ function SankeyChart(fullProps: any) {
         </div>
       );
     }
-    return <EmptyStateBadge message="No flow data available for Sankey diagram." />;
+    return null;;
   }
 
   const data = {

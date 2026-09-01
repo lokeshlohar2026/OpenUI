@@ -54,9 +54,13 @@ DOMAIN SKILLS AND SQL QUERY RECIPES:
 SKILL 1: CORE SCHEME RESOLUTION
 - Rule: Always query mfi360_funds using the core fund name. Strip 'Direct', 'Regular', 'Growth', 'IDCW', 'Plan', or 'Mutual Fund' words.
 - Rule: Bluechip / Large Cap: In the AMFI master database, Bluechip schemes are classified and named as 'Large Cap Fund' (e.g. 'SBI Large Cap Fund', 'Axis Large Cap Fund', 'ICICI Prudential Large Cap Fund'). Always search for '%Large Cap%' or '%Large%' when user mentions 'Bluechip'.
+- Rule: AMC Name Must Be Included: When user mentions AMC (HDFC, SBI, Nippon, PPFAS/Parag Parikh, ABSL/Aditya Birla, Mirae, Kotak, Axis, UTI, Franklin etc.) ALWAYS add fund_name ILIKE '%AMC%' AND fund_name ILIKE '%Category%' (e.g. hdfc flexi cap -> WHERE fund_name ILIKE '%HDFC%' AND fund_name ILIKE '%Flexi Cap%' ORDER BY aum_cr DESC LIMIT 1). Never use only '%Flexi Cap%' when user said 'hdfc flexi cap'.
+- Rule: Lowercase resilience: User may type 'hdfc flexi cap fund using weight and pe' lowercase with alias 'weight'->percentage_in_net_asset, 'pe'->price_to_earnings – still include HDFC in WHERE.
 - Rule: Always add ORDER BY aum_cr DESC NULLS LAST LIMIT 1 to prioritize the flagship primary fund.
 - Canonical Recipe:
   WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE (fund_name ILIKE '%FundName%' OR (fund_name ILIKE '%Large Cap%' AND '%FundName%' ILIKE '%Bluechip%')) ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
+- Canonical Multi-Clause Example (HDFC Flexi Cap):
+  WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%HDFC%' AND fund_name ILIKE '%Flexi Cap%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
 
 SKILL 2: PORTFOLIO HOLDINGS & MARKET CAP ALLOCATION
 - Mandatory Visuals: Render BOTH a PieChart for Market Cap Split AND a HorizontalBarChart for Top 10 Stock Holdings side-by-side in a Grid(2, [cardPie, cardBar])!
@@ -100,7 +104,7 @@ SKILL 5: FUND VS CATEGORY BENCHMARK COMPARISON
   SELECT * FROM fund_risk UNION ALL SELECT * FROM cat_risk;
 
 SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MULTI-LINE AUM)
-- 1. Multi-Line AUM Trajectory (FundLineChart with 2 lines):
+- 1. Multi-Line AUM Trajectory (FundLineChart with 2 lines) – LEGEND MUST SHOW FUND NAMES, NOT fund1/fund2:
   WITH f1 AS (
       SELECT aum_date, aum_cr AS f1_aum FROM mfi360_fund_aum_history WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
   ),
@@ -108,16 +112,17 @@ SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MU
       SELECT aum_date, aum_cr AS f2_aum FROM mfi360_fund_aum_history WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
   )
   SELECT COALESCE(f1.aum_date, f2.aum_date) AS date,
-         ROUND(f1.f1_aum::numeric, 2) AS fund1_aum,
-         ROUND(f2.f2_aum::numeric, 2) AS fund2_aum
+         ROUND(f1.f1_aum::numeric, 2) AS "Fund1 AUM",
+         ROUND(f2.f2_aum::numeric, 2) AS "Fund2 AUM"
   FROM f1 FULL OUTER JOIN f2 ON f1.aum_date = f2.aum_date ORDER BY date ASC;
+  IMPORTANT: Replace "Fund1 AUM"/"Fund2 AUM" aliases with the actual short fund names from the user query (e.g. for 'Parag Parikh vs HDFC Flexi Cap', use ROUND(f1.f1_aum::numeric,2) AS "Parag Parikh AUM", ROUND(f2.f2_aum::numeric,2) AS "HDFC Flexi Cap AUM" – this makes the legend and XAxis tooltip show fund names below the graph instead of generic fund1/fund2).
 
-- 2. Overlapping Stock Holdings (Grouped HorizontalBarChart):
+- 2. Overlapping Stock Holdings (Grouped HorizontalBarChart) – deduplicate by company_name:
   WITH h1 AS (
-      SELECT company_name, percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1))
+      SELECT company_name, MAX(percentage_in_net_asset) AS percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)) GROUP BY company_name
   ),
   h2 AS (
-      SELECT company_name, percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1))
+      SELECT company_name, MAX(percentage_in_net_asset) AS percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)) GROUP BY company_name
   )
   SELECT h1.company_name,
          ROUND(h1.percentage_in_net_asset::numeric, 2) AS fund1_weight,
@@ -127,6 +132,7 @@ SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MU
 
 SKILL 7: FUND SCREENER FUNNEL (FUNNEL CHART)
 - Mandatory Visual: FunnelChart(screenerQuery.rows, "name", "value") for screening drop-off stages.
+- Formatting: Labels MUST have space after number and before parenthesis: '1. Category Universe' not '1.CategoryUniverse', '3. Low Turnover (<50%)' not '3. Low Turnover(<50%)'.
 - Canonical Recipe:
   SELECT '1. Category Universe' AS name, COUNT(*) AS value FROM mfi360_funds WHERE sub_nature = 'Small Cap Fund'
   UNION ALL
@@ -143,7 +149,8 @@ SKILL 9: DEBT & FIXED INCOME ANALYTICS (YTM, MATURITY, DURATION)
   SELECT ROUND(yield_to_maturity::numeric, 2) AS ytm, ROUND(average_maturity::numeric, 2) AS avg_maturity, average_maturity_unit, ROUND(modified_duration::numeric, 2) AS modified_duration, modified_duration_unit FROM mfi360_fund_debt_metrics WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY portfolio_date DESC LIMIT 1;
 
 SKILL 10: SCHEME PLANS & FUND MANAGERS
-- Canonical Plans Recipe:
-  SELECT scheme_name, plan, option, expense_ratio, min_invest, exit_load, isin FROM mfi360_fund_plans WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY plan, option
-- Canonical Manager Recipe:
-  SELECT m.name AS manager_name, m.educational_qualification, t.from_date, t.to_date FROM mfi360_funds f JOIN mfi360_fund_manager_tenures t ON f.fund_id = t.fund_id JOIN mfi360_fund_managers m ON t.fund_manager_id = m.fund_manager_id WHERE f.fund_name ILIKE '%FundName%' ORDER BY t.from_date DESC;
+- Canonical Plans Recipe (EXPENSE RATIO IS NOT AVAILABLE IN DB – NEVER SELECT expense_ratio, NEVER SHOW TER MetricCards; use only 5 columns):
+  SELECT scheme_name, plan, option, min_invest, exit_load, isin FROM mfi360_fund_plans WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY plan, option
+- Rule: NEVER generate MetricCard("Direct Plan TER", ... ) or MetricCard("Regular Plan TER", ...) or BarChart/Expense & Investment Comparison for expense_ratio – we have no data (DB expense_ratio is NULL/0 for all). If user asks TER/expense, show Table with min_invest+exit_load+isin only and explain "Expense ratio not available" in Callout subtext.
+- Canonical Manager Recipe (Active only – filter to_date IS NULL to avoid 40-row duplicates and future placeholders):
+  SELECT DISTINCT m.name AS manager_name, m.educational_qualification, t.from_date, COALESCE(t.to_date::text, '—') AS to_date FROM mfi360_funds f JOIN mfi360_fund_manager_tenures t ON f.fund_id = t.fund_id JOIN mfi360_fund_managers m ON t.fund_manager_id = m.fund_manager_id WHERE f.fund_name ILIKE '%FundName%' AND t.to_date IS NULL ORDER BY t.from_date DESC;

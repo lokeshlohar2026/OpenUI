@@ -7,6 +7,7 @@ interface ChatMessageProps {
   text: string;
   isStreaming?: boolean;
   timestamp?: string;
+  elapsedMs?: number;
 }
 
 function topologicalSortOpenUI(code: string): string {
@@ -149,7 +150,16 @@ function rewriteMacros(code: string): string {
   return code;
 }
 
-export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessageProps) {
+export function ChatMessage({ text, isStreaming = false, timestamp, elapsedMs }: ChatMessageProps) {
+  const formatElapsed = (ms?: number) => {
+    if (ms === undefined || ms === null) return null;
+    if (ms < 1000) return `${ms}ms`;
+    const s = ms / 1000;
+    if (s < 60) return `${s.toFixed(1)}s`;
+    return `${(s/60).toFixed(1)}m`;
+  };
+  const elapsedLabel = formatElapsed(elapsedMs);
+  const isCached = elapsedMs !== undefined && elapsedMs < 1000;
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -169,8 +179,16 @@ export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessag
     code = code.replace(/\bRoot\s*\(/g, "Column(");
     code = code.replace(/\b(Stack|Container)\s*\(/g, "Column(");
 
+    // Collapse nested Column(Column(...)) -> Column(...) repeatedly
+    let prev: string | null = null;
+    while (prev !== code) {
+      prev = code;
+      code = code.replace(/Column\s*\(\s*Column\s*\(/g, "Column(");
+    }
+
     // If root = Column(singleVar) or root = Column([singleVar]):
     code = code.replace(/^\s*root\s*=\s*Column\(\s*\[?\s*([a-zA-Z_]\w*)\s*\]?\s*\)\s*$/gm, "root = $1");
+    code = code.replace(/^\s*root\s*=\s*Column\(\s*([a-zA-Z_]\w*)\s*\)\s*$/gm, "root = $1");
 
     // CRITICAL: root = varName (simple alias) → inline the variable's value
     const rootAliasMatch = code.match(/^\s*root\s*=\s*([a-zA-Z_]\w*)\s*$/m);
@@ -246,7 +264,13 @@ export function ChatMessage({ text, isStreaming = false, timestamp }: ChatMessag
         </div>
 
         <div className="flex items-center gap-1.5">
-          {timestamp && <span className="text-[11px] text-zinc-400 mr-2">{timestamp}</span>}
+          {timestamp && <span className="text-[11px] text-zinc-400 mr-1">{timestamp}</span>}
+          {elapsedLabel && (
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${isCached ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70' : 'bg-amber-50 text-amber-700 border-amber-200/70'}`} title={`Query to visual: ${elapsedLabel}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isCached ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              {isCached ? `⚡ ${elapsedLabel} cached` : `⏱ ${elapsedLabel}`}
+            </span>
+          )}
           <button
             onClick={handleCopy}
             className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-100 transition-colors"

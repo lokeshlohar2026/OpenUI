@@ -3,8 +3,9 @@ import re
 import json
 import time
 import asyncio
+import hashlib
 from pathlib import Path
-from typing import AsyncGenerator, Optional, Dict, Any
+from typing import AsyncGenerator, Optional, Dict, Any, Tuple
 import httpx
 from dotenv import load_dotenv
 from logger import log_llm_interaction
@@ -43,6 +44,20 @@ OPENCODE_REASONING_EFFORT = nullable_env("OPENCODE_REASONING_EFFORT")
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 PROMPT_FILE = Path(__file__).parent / "openui_prompt.txt"
 
+# ── Semantic Cache (in-memory, unlimited, per-query, TTL 3600) ─────────────────
+LLM_CACHE: Dict[str, Tuple[float, str]] = {}
+LLM_CACHE_TTL = 3600  # seconds, sliding per entry
+_prompt_hash: Optional[str] = None
+
+def _normalize_query_for_cache(q: str) -> str:
+    # Same normalization as db.py resolve_best_fund_name (without DB import to avoid cycle)
+    n = q.lower().strip()
+    n = re.sub(r"\s+", " ", n)
+    # Minimal AMC synonym collapse for cache hit across case/alias
+    for pat, repl in [(r"\bhdfc\b","hdfc"),(r"\bsbi\b","sbi"),(r"\bnippon\b","nippon"),(r"\bppfas\b","parag"),(r"\babsl\b","absl"),(r"\bblue\s*chip\b","large cap")]:
+        n = re.sub(pat, repl, n, flags=re.IGNORECASE)
+    return n
+
 def load_system_prompt() -> str:
     """
     Dynamically loads the modular system prompt files from the /prompts directory:
@@ -53,6 +68,7 @@ def load_system_prompt() -> str:
     
     Falls back to openui_prompt.txt if the /prompts directory is not present.
     """
+    global _prompt_hash
     if PROMPTS_DIR.exists() and PROMPTS_DIR.is_dir():
         prompt_parts = []
         for file in sorted(PROMPTS_DIR.glob("*.txt")):
@@ -60,10 +76,14 @@ def load_system_prompt() -> str:
             if text:
                 prompt_parts.append(text)
         if prompt_parts:
-            return "\n\n".join(prompt_parts)
+            prompt = "\n\n".join(prompt_parts)
+            _prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:8]
+            return prompt
 
     if PROMPT_FILE.exists():
-        return PROMPT_FILE.read_text(encoding="utf-8").strip()
+        prompt = PROMPT_FILE.read_text(encoding="utf-8").strip()
+        _prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:8]
+        return prompt
 
     return "You are an AI financial assistant generating OpenUI declarative code."
 
@@ -103,7 +123,7 @@ async def _stream_openai_compatible(base_url: str, api_key: str, payload: Dict[s
 
 
 async def stream_groq(prompt_text: str, query: str) -> AsyncGenerator[str, None]:
-    """Streams response from Groq API (openai/gpt-oss-20b)."""
+    """Streams response from Groq API (openai/gpt-oss-120b or llama-3.3-70b)."""
     api_key = os.getenv("GROQ_API_KEY", "")
     if not api_key:
         yield 'root = Column([TextContent("Error: GROQ_API_KEY is not set in environment.")])'
@@ -115,9 +135,8 @@ async def stream_groq(prompt_text: str, query: str) -> AsyncGenerator[str, None]
             {"role": "system", "content": prompt_text},
             {"role": "user", "content": query},
         ],
-        "temperature": 1,
+        "temperature": 0.2,
         "max_completion_tokens": GROQ_MAX_COMPLETION_TOKENS,
-        "top_p": 1,
         "stream": True,
     }
     if GROQ_REASONING_EFFORT:
@@ -299,9 +318,17 @@ def normalize_ast_root(code: str) -> str:
     code = re.sub(r'\bStack\s*\(', 'Column(', code)
     code = re.sub(r'\bContainer\s*\(', 'Column(', code)
 
+    # Collapse nested Column(Column(...)) -> Column(...) repeatedly (handles Root(Container([...])) -> Column(Column([...])))
+    prev = None
+    while prev != code:
+        prev = code
+        code = re.sub(r'Column\s*\(\s*Column\s*\(', 'Column(', code)
+
     # If root = Column(singleVar) or root = Column([singleVar]):
     # Unwrap it to root = singleVar so the inliner below can resolve its definition
     code = re.sub(r'^\s*root\s*=\s*Column\(\s*\[?\s*([a-zA-Z_]\w*)\s*\]?\s*\)\s*$', r'root = \1', code, flags=re.MULTILINE)
+    # Handle root = Column(Column(var)) after collapse above
+    code = re.sub(r'^\s*root\s*=\s*Column\(\s*([a-zA-Z_]\w*)\s*\)\s*$', r'root = \1', code, flags=re.MULTILINE)
 
     # CRITICAL: root = varName (simple variable alias)
     # Inline the variable's assigned value directly into root.
@@ -329,6 +356,7 @@ async def stream_openui_chain(user_query: str) -> AsyncGenerator[str, None]:
     Main LangChain-compatible streaming entrypoint.
     Loads the system prompt and streams from the active LLM provider with telemetry logging.
     Post-processes the full output with AST normalizers before final yield.
+    Implements in-memory semantic cache (unlimited, TTL 3600) for 0s on repeats.
     """
     prompt = load_system_prompt()
     provider = LLM_PROVIDER
@@ -336,6 +364,17 @@ async def stream_openui_chain(user_query: str) -> AsyncGenerator[str, None]:
         OPENCODE_MODEL if provider == "opencode"
         else (GEMINI_MODEL if provider == "gemini" else GROQ_MODEL)
     )
+
+    # Semantic cache – check before LLM call (frontend-only, no DB change)
+    norm = _normalize_query_for_cache(user_query)
+    cache_key = f"{_prompt_hash}:{hashlib.sha256(norm.encode()).hexdigest()}" if _prompt_hash else norm
+    now = time.time()
+    if cache_key in LLM_CACHE:
+        ts, cached_ast = LLM_CACHE[cache_key]
+        if now - ts < LLM_CACHE_TTL:
+            yield cached_ast
+            log_llm_interaction(provider=provider, model=model, user_query=user_query, generated_code=cached_ast, elapsed_ms=0.05, error=None)
+            return
 
     start_t = time.perf_counter()
     accumulated = ""
@@ -357,6 +396,9 @@ async def stream_openui_chain(user_query: str) -> AsyncGenerator[str, None]:
         # 2. Normalize Root/Stack/Container → Column
         processed = reorder_ast(accumulated)
         processed = normalize_ast_root(processed)
+
+        # Store in semantic cache (in-memory unlimited, TTL 3600)
+        LLM_CACHE[cache_key] = (time.time(), processed)
 
         # Stream the fully-processed code as a single payload
         yield processed

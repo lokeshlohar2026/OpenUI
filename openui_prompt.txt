@@ -160,24 +160,6 @@ When tools are available, follow this workflow:
 5. Use @-prefixed builtins (@Count, @Filter, @Sort, @Sum) on Query results for KPIs and aggregations — the runtime evaluates these live on every refresh
 6. Hardcoded arrays are ONLY for static display data (labels, options) where no tool exists
 
-WRONG — you called a tool and got data back, but you inlined the results:
-```
-openCount = 2
-item1 = SomeComp("first item title")
-item2 = SomeComp("second item title")
-list = Stack([item1, item2])
-chart = SomeChart(["A", "B"], [12, 8])
-```
-This is static — it shows stale data and won't update. Creating item1, item2, item3... manually is ALWAYS wrong when a tool exists.
-
-RIGHT — use Query() for live data, Mutation() for writes, @builtins to derive values:
-```
-data = Query("tool_name", {}, {rows: []})
-openCount = @Count(@Filter(data.rows, "field", "==", "value"))
-list = @Each(data.rows, "item", SomeComp(item.title, item.field))
-createResult = Mutation("create_tool", {title: $title})
-submitBtn = Button("Create", Action([@Run(createResult), @Run(data), @Reset($title)]))
-```
 Everything derives from the Query — when data refreshes, the entire dashboard updates automatically.
 
 ## Available Tools
@@ -247,235 +229,110 @@ COMPLETE TABLE SPECIFICATIONS:
 
 1. mfi360_fund_portfolio_holdings (Docker PostgreSQL table for mfi360_fund_portfolio_holdings | Live Rows: 9548521)
    • Columns:
-     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id] (Samples: [2001,2002,2003])
-     - scheme_id [INTEGER] (Samples: [119551,119552,119553])
-     - portfolio_date [DATE, PK] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - company_name [VARCHAR(300), PK] (Samples: ["Reliance Industries Ltd.","HDFC Bank Ltd.","ICICI Bank Ltd."])
-     - issuer_name [VARCHAR(300)] (Samples: ["Reliance Industries Ltd.","HDFC Bank Ltd.","ICICI Bank Ltd."])
-     - company_isin [VARCHAR(20)] (Samples: ["INF200K01150","INF200K01168","INF179K01BE2"])
-     - sector_name [VARCHAR(200)] (Samples: ["Financial Services","Information Technology","Oil, Gas & Consumable Fuels"])
-     - instrument_name [VARCHAR(100), PK] (Samples: ["Equity Shares","Equity Shares","Debentures"])
-     - market_cap_caption [VARCHAR(50)] (Samples: ["Large Cap","Large Cap","Large Cap"])
-     - quantity [NUMERIC(20, 4)] (Samples: [1500000,2800000,4500000])
-     - market_value [NUMERIC(20, 4)] (Samples: [4500.25,3950.8,5100])
-     - percentage_in_net_asset [NUMERIC(8, 4)] (Samples: [9.85,8.4,7.2])
-     - coupon_rate [NUMERIC(14, 4)] (Samples: [7.5,8.1,6.95])
-     - maturity_date [DATE] (Samples: ["sample_value_maturity_date_1","sample_value_maturity_date_2","sample_value_maturity_date_3"])
-     - rating [VARCHAR(50)] (Samples: ["AAA","CRISIL A1+","AA+"])
-     - rating_agency [VARCHAR(100)] (Samples: ["CRISIL","ICRA","CARE"])
-     - is_new_in [BOOLEAN] (Samples: [true,false,false])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
+     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+     - scheme_id [INTEGER]
+     - portfolio_date [DATE, PK]
+     - company_name [VARCHAR(300), PK]
+     - issuer_name [VARCHAR(300)]
+     - company_isin [VARCHAR(20)]
+     - sector_name [VARCHAR(200)]
+     - instrument_name [VARCHAR(100), PK]
+     - market_cap_caption [VARCHAR(50)]
+     - quantity [NUMERIC(20, 4)]
+     - market_value [NUMERIC(20, 4)]
+     - percentage_in_net_asset [NUMERIC(8, 4)]
+     - coupon_rate [NUMERIC(14, 4)]
+     - maturity_date [DATE]
+     - rating [VARCHAR(50)]
+     - rating_agency [VARCHAR(100)]
+     - is_new_in [BOOLEAN]
+     - fetched_at [DATETIME]
 
-2. amfi_portal_indices_history (Docker PostgreSQL table for amfi_portal_indices_history | Live Rows: 400412)
+2. mfi360_fund_manager_tenures (Docker PostgreSQL table for mfi360_fund_manager_tenures | Live Rows: 11139)
    • Columns:
-     - index_id [INTEGER, PK, FK -> amfi_portal_indices.index_id] (Samples: [1,2,3])
-     - index_date [DATE, PK] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - value [NUMERIC(20, 6)] (Samples: [100.5,250.75,500])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
+     - fund_manager_id [INTEGER, PK, FK -> mfi360_fund_managers.fund_manager_id]
+     - amc_id [INTEGER, FK -> mfi360_amcs.mf_id]
+     - fund_id [INTEGER, PK]
+     - fund_name [VARCHAR(300)]
+     - from_date [DATE, PK]
+     - to_date [DATE]
+     - fetched_at [DATETIME]
 
-3. mfi360_indices_history (Docker PostgreSQL table for mfi360_indices_history | Live Rows: 300696)
+3. mfi360_fund_plans (Docker PostgreSQL table for mfi360_fund_plans | Live Rows: 7764)
    • Columns:
-     - index_id [INTEGER, PK] (Samples: [1,2,3])
-     - index_date [DATE, PK] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - value [NUMERIC(20, 6)] (Samples: [100.5,250.75,500])
-     - anchor_scheme_id [INTEGER] (Samples: [1,2,3])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
+     - scheme_id [INTEGER, PK]
+     - fund_id [INTEGER, FK -> mfi360_funds.fund_id]
+     - scheme_name [VARCHAR(300)]
+     - plan [VARCHAR(10)]
+     - option [VARCHAR(10)]
+     - amfi_code [VARCHAR(20)]
+     - amfi_amc_code [INTEGER]
+     - isin [VARCHAR(20)]
+     - launch_date [DATE]
+     - expense_ratio [NUMERIC(6, 4)]
+     - min_invest [NUMERIC(12, 2)]
+     - exit_load [JSONB]
+     - fetched_at [DATETIME]
 
-4. mfi360_composite_benchmark_history (Docker PostgreSQL table for mfi360_composite_benchmark_history | Live Rows: 233737)
+4. mfi360_scheme_risk_ratios (Docker PostgreSQL table for mfi360_scheme_risk_ratios | Live Rows: 5690)
    • Columns:
-     - composite_key [VARCHAR(64), PK] (Samples: ["sample_value_composite_key_1","sample_value_composite_key_2","sample_value_composite_key_3"])
-     - index_date [DATE, PK] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - value [NUMERIC(20, 6)] (Samples: [100.5,250.75,500])
-     - computed_at [DATETIME] (Samples: ["sample_value_computed_at_1","sample_value_computed_at_2","sample_value_computed_at_3"])
+     - scheme_id [INTEGER, PK, FK -> mfi360_fund_plans.scheme_id]
+     - standard_deviation [NUMERIC(12, 4)]
+     - beta [NUMERIC(12, 4)]
+     - sharpe_ratio [NUMERIC(12, 4)]
+     - fetched_at [DATETIME]
 
-5. amfi_isin_master (Docker PostgreSQL table for amfi_isin_master | Live Rows: 14051)
+5. mfi360_funds (Docker PostgreSQL table for mfi360_funds | Live Rows: 2017)
    • Columns:
-     - scheme_id [INTEGER, PK] (Samples: [119551,119552,119553])
-     - amc_id [INTEGER] (Samples: [101,102,103])
-     - scheme_name [VARCHAR(300)] (Samples: ["SBI Bluechip Fund - Direct Plan - Growth","SBI Bluechip Fund - Regular Plan - Growth","HDFC Flexi Cap Fund - Direct - Growth"])
-     - isin_primary [VARCHAR(20)] (Samples: ["INF200K01150","INF200K01168","INF179K01BE2"])
-     - isin_reinvestment [VARCHAR(20)] (Samples: ["sample_value_isin_reinvestment_1","sample_value_isin_reinvestment_2","sample_value_isin_reinvestment_3"])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
+     - fund_id [INTEGER, PK]
+     - mf_id [INTEGER, FK -> mfi360_amcs.mf_id]
+     - fund_name [VARCHAR(300)]
+     - nature [VARCHAR(50)]
+     - sub_nature [VARCHAR(50)]
+     - riskometer [VARCHAR(50)]
+     - fund_manager [ARRAY]
+     - aum_cr [NUMERIC(18, 4)]
+     - aum_date [VARCHAR(20)]
+     - portfolio_turnover_ratio [NUMERIC(10, 4)]
+     - fetched_at [DATETIME]
 
-6. bse_isin_master (Docker PostgreSQL table for bse_isin_master | Live Rows: 12208)
+6. mfi360_scheme_valuation_metrics (Docker PostgreSQL table for mfi360_scheme_valuation_metrics | Live Rows: 1977)
    • Columns:
-     - product_code [VARCHAR(50), PK] (Samples: ["sample_value_product_code_1","sample_value_product_code_2","sample_value_product_code_3"])
-     - isin [VARCHAR(20), PK] (Samples: ["INF200K01150","INF200K01168","INF179K01BE2"])
-     - scheme_name [TEXT] (Samples: ["SBI Bluechip Fund - Direct Plan - Growth","SBI Bluechip Fund - Regular Plan - Growth","HDFC Flexi Cap Fund - Direct - Growth"])
+     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+     - portfolio_date [DATE]
+     - price_to_earnings [NUMERIC(12, 4)]
+     - price_to_book [NUMERIC(12, 4)]
+     - dividend_yield [NUMERIC(12, 4)]
+     - market_cap [NUMERIC(20, 4)]
+     - portfolio_turnover_ratio [NUMERIC(12, 4)]
+     - fetched_at [DATETIME]
 
-7. mcx_spot_market_prices (Docker PostgreSQL table for mcx_spot_market_prices | Live Rows: 11375)
+7. mfi360_fund_debt_metrics (Docker PostgreSQL table for mfi360_fund_debt_metrics | Live Rows: 1977)
    • Columns:
-     - commodity_id [INTEGER, PK, FK -> mcx_spot_commodities.commodity_id] (Samples: [1,2,3])
-     - price_date [DATE, PK] (Samples: ["sample_value_price_date_1","sample_value_price_date_2","sample_value_price_date_3"])
-     - value [NUMERIC(20, 6)] (Samples: [100.5,250.75,500])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
+     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+     - portfolio_date [DATE]
+     - average_maturity [NUMERIC(12, 4)]
+     - average_maturity_unit [VARCHAR(20)]
+     - yield_to_maturity [NUMERIC(12, 4)]
+     - modified_duration [NUMERIC(12, 4)]
+     - modified_duration_unit [VARCHAR(20)]
+     - fetched_at [DATETIME]
 
-8. mfi360_fund_manager_tenures (Docker PostgreSQL table for mfi360_fund_manager_tenures | Live Rows: 11139)
+8. mfi360_fund_managers (Docker PostgreSQL table for mfi360_fund_managers | Live Rows: 1206)
    • Columns:
-     - fund_manager_id [INTEGER, PK, FK -> mfi360_fund_managers.fund_manager_id] (Samples: [1,2,3])
-     - amc_id [INTEGER, FK -> mfi360_amcs.mf_id] (Samples: [101,102,103])
-     - fund_id [INTEGER, PK] (Samples: [2001,2002,2003])
-     - fund_name [VARCHAR(300)] (Samples: ["SBI Bluechip Fund","HDFC Flexi Cap Fund","ICICI Prudential Smallcap Fund"])
-     - from_date [DATE, PK] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - to_date [DATE] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
+     - fund_manager_id [INTEGER, PK]
+     - name [VARCHAR(200)]
+     - active [BOOLEAN]
+     - educational_qualification [TEXT]
+     - duplicate_of_fund_manager_id [INTEGER, FK -> mfi360_fund_managers.fund_manager_id]
+     - fetched_at [DATETIME]
 
-9. mfi360_fund_plans (Docker PostgreSQL table for mfi360_fund_plans | Live Rows: 7764)
+9. mfi360_fund_aum_history (Docker PostgreSQL table for mfi360_fund_aum_history | Live Rows: 0)
    • Columns:
-     - scheme_id [INTEGER, PK] (Samples: [119551,119552,119553])
-     - fund_id [INTEGER, FK -> mfi360_funds.fund_id] (Samples: [2001,2002,2003])
-     - scheme_name [VARCHAR(300)] (Samples: ["SBI Bluechip Fund - Direct Plan - Growth","SBI Bluechip Fund - Regular Plan - Growth","HDFC Flexi Cap Fund - Direct - Growth"])
-     - plan [VARCHAR(10)] (Samples: ["DIRECT","REGULAR","DIRECT"])
-     - option [VARCHAR(10)] (Samples: ["GROWTH","GROWTH","IDCW"])
-     - amfi_code [VARCHAR(20)] (Samples: ["119551","119552","119553"])
-     - amfi_amc_code [INTEGER] (Samples: [119,108,109])
-     - isin [VARCHAR(20)] (Samples: ["INF200K01150","INF200K01168","INF179K01BE2"])
-     - launch_date [DATE] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - expense_ratio [NUMERIC(6, 4)] (Samples: [0.85,1.65,0.95])
-     - min_invest [NUMERIC(12, 2)] (Samples: [5000,5000,100])
-     - exit_load [JSONB] (Samples: [{"pct":1,"days":365},{"pct":1,"days":365},{"pct":0,"days":0}])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-10. mfi360_scheme_risk_ratios (Docker PostgreSQL table for mfi360_scheme_risk_ratios | Live Rows: 5690)
-   • Columns:
-     - scheme_id [INTEGER, PK, FK -> mfi360_fund_plans.scheme_id] (Samples: [119551,119552,119553])
-     - standard_deviation [NUMERIC(12, 4)] (Samples: [14.25,0.92,1.15])
-     - beta [NUMERIC(12, 4)] (Samples: [14.25,0.92,1.15])
-     - sharpe_ratio [NUMERIC(12, 4)] (Samples: [14.25,0.92,1.15])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-11. mcx_icomdex_indices_history (Docker PostgreSQL table for mcx_icomdex_indices_history | Live Rows: 5450)
-   • Columns:
-     - instrument_identifier [INTEGER, PK, FK -> mcx_icomdex_indices.instrument_identifier] (Samples: [1,2,3])
-     - index_date [DATE, PK] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - open [NUMERIC(20, 6)] (Samples: [100.5,250.75,500])
-     - high [NUMERIC(20, 6)] (Samples: [100.5,250.75,500])
-     - low [NUMERIC(20, 6)] (Samples: [100.5,250.75,500])
-     - close [NUMERIC(20, 6)] (Samples: [100.5,250.75,500])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-12. mfi360_funds (Docker PostgreSQL table for mfi360_funds | Live Rows: 2017)
-   • Columns:
-     - fund_id [INTEGER, PK] (Samples: [2001,2002,2003])
-     - mf_id [INTEGER, FK -> mfi360_amcs.mf_id] (Samples: [101,102,103])
-     - fund_name [VARCHAR(300)] (Samples: ["SBI Bluechip Fund","HDFC Flexi Cap Fund","ICICI Prudential Smallcap Fund"])
-     - nature [VARCHAR(50)] (Samples: ["Equity","Equity","Equity"])
-     - sub_nature [VARCHAR(50)] (Samples: ["Large Cap Fund","Flexi Cap Fund","Small Cap Fund"])
-     - riskometer [VARCHAR(50)] (Samples: ["Very High","Very High","Very High"])
-     - fund_manager [ARRAY] (Samples: [["Sohini Andani"],["Prashant Jain","Roshi Jain"],["Sankaran Naren"]])
-     - aum_cr [NUMERIC(18, 4)] (Samples: [42500.5,38210.75,21450.2])
-     - aum_date [VARCHAR(20)] (Samples: ["2026-07-31","2026-07-31","2026-07-31"])
-     - portfolio_turnover_ratio [NUMERIC(10, 4)] (Samples: [0.25,0.42,0.18])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-13. amfi_fund_benchmarks (Docker PostgreSQL table for amfi_fund_benchmarks | Live Rows: 2001)
-   • Columns:
-     - sub_category_id [INTEGER, PK, FK -> amfi_sub_categories.sub_category_id] (Samples: [1,2,3])
-     - scheme_name [VARCHAR(300), PK] (Samples: ["SBI Bluechip Fund - Direct Plan - Growth","SBI Bluechip Fund - Regular Plan - Growth","HDFC Flexi Cap Fund - Direct - Growth"])
-     - benchmark [TEXT] (Samples: ["sample_value_benchmark_1","sample_value_benchmark_2","sample_value_benchmark_3"])
-
-14. mfi360_scheme_valuation_metrics (Docker PostgreSQL table for mfi360_scheme_valuation_metrics | Live Rows: 1977)
-   • Columns:
-     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id] (Samples: [2001,2002,2003])
-     - portfolio_date [DATE] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - price_to_earnings [NUMERIC(12, 4)] (Samples: [14.25,0.92,1.15])
-     - price_to_book [NUMERIC(12, 4)] (Samples: [14.25,0.92,1.15])
-     - dividend_yield [NUMERIC(12, 4)] (Samples: [14.25,0.92,1.15])
-     - market_cap [NUMERIC(20, 4)] (Samples: [100.5,250.75,500])
-     - portfolio_turnover_ratio [NUMERIC(12, 4)] (Samples: [0.25,0.42,0.18])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-15. mfi360_fund_debt_metrics (Docker PostgreSQL table for mfi360_fund_debt_metrics | Live Rows: 1977)
-   • Columns:
-     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id] (Samples: [2001,2002,2003])
-     - portfolio_date [DATE] (Samples: ["2006-02-14","2013-01-01","1995-01-01"])
-     - average_maturity [NUMERIC(12, 4)] (Samples: [100.5,250.75,500])
-     - average_maturity_unit [VARCHAR(20)] (Samples: ["sample_value_average_maturity_unit_1","sample_value_average_maturity_unit_2","sample_value_average_maturity_unit_3"])
-     - yield_to_maturity [NUMERIC(12, 4)] (Samples: [100.5,250.75,500])
-     - modified_duration [NUMERIC(12, 4)] (Samples: [100.5,250.75,500])
-     - modified_duration_unit [VARCHAR(20)] (Samples: ["sample_value_modified_duration_unit_1","sample_value_modified_duration_unit_2","sample_value_modified_duration_unit_3"])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-16. mfi360_fund_managers (Docker PostgreSQL table for mfi360_fund_managers | Live Rows: 1206)
-   • Columns:
-     - fund_manager_id [INTEGER, PK] (Samples: [1,2,3])
-     - name [VARCHAR(200)] (Samples: ["sample_value_name_1","sample_value_name_2","sample_value_name_3"])
-     - active [BOOLEAN] (Samples: [true,false,false])
-     - educational_qualification [TEXT] (Samples: ["sample_value_educational_qualification_1","sample_value_educational_qualification_2","sample_value_educational_qualification_3"])
-     - duplicate_of_fund_manager_id [INTEGER, FK -> mfi360_fund_managers.fund_manager_id] (Samples: [1,2,3])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-17. mfi360_indices (Docker PostgreSQL table for mfi360_indices | Live Rows: 860)
-   • Columns:
-     - index_id [INTEGER, PK] (Samples: [1,2,3])
-     - index_name [VARCHAR(200)] (Samples: ["sample_value_index_name_1","sample_value_index_name_2","sample_value_index_name_3"])
-     - is_restricted [BOOLEAN] (Samples: [true,false,false])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-18. benchmark_reference_map (Docker PostgreSQL table for benchmark_reference_map | Live Rows: 406)
-   • Columns:
-     - benchmark [TEXT, PK] (Samples: ["sample_value_benchmark_1","sample_value_benchmark_2","sample_value_benchmark_3"])
-     - source_system [VARCHAR(30)] (Samples: ["sample_value_source_system_1","sample_value_source_system_2","sample_value_source_system_3"])
-     - mfi360_index_id [INTEGER, FK -> mfi360_indices.index_id] (Samples: [1,2,3])
-     - amfi_portal_index_id [INTEGER, FK -> amfi_portal_indices.index_id] (Samples: [1,2,3])
-     - mcx_icomdex_instrument_id [INTEGER, FK -> mcx_icomdex_indices.instrument_identifier] (Samples: [1,2,3])
-     - mcx_spot_commodity_id [INTEGER, FK -> mcx_spot_commodities.commodity_id] (Samples: [1,2,3])
-     - composite_key [VARCHAR(64)] (Samples: ["sample_value_composite_key_1","sample_value_composite_key_2","sample_value_composite_key_3"])
-     - components [JSONB] (Samples: ["sample_value_components_1","sample_value_components_2","sample_value_components_3"])
-     - resolved_at [DATETIME] (Samples: ["sample_value_resolved_at_1","sample_value_resolved_at_2","sample_value_resolved_at_3"])
-
-19. amfi_portal_indices (Docker PostgreSQL table for amfi_portal_indices | Live Rows: 89)
-   • Columns:
-     - index_id [INTEGER, PK] (Samples: [1,2,3])
-     - index_name [VARCHAR(200)] (Samples: ["sample_value_index_name_1","sample_value_index_name_2","sample_value_index_name_3"])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-20. mfi360_amcs (Docker PostgreSQL table for mfi360_amcs | Live Rows: 52)
-   • Columns:
-     - mf_id [INTEGER, PK] (Samples: [101,102,103])
-     - name [VARCHAR(200)] (Samples: ["SBI Mutual Fund","HDFC Mutual Fund","ICICI Prudential Mutual Fund"])
-     - amfi_amc_code [INTEGER] (Samples: [119,108,109])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-21. amfi_sub_categories (Docker PostgreSQL table for amfi_sub_categories | Live Rows: 40)
-   • Columns:
-     - sub_category_id [INTEGER, PK] (Samples: [1,2,3])
-     - sub_category_name [VARCHAR(100)] (Samples: ["sample_value_sub_category_name_1","sample_value_sub_category_name_2","sample_value_sub_category_name_3"])
-     - category_id [INTEGER] (Samples: [1,2,3])
-     - category_name [VARCHAR(50)] (Samples: ["sample_value_category_name_1","sample_value_category_name_2","sample_value_category_name_3"])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-22. mcx_icomdex_indices (Docker PostgreSQL table for mcx_icomdex_indices | Live Rows: 12)
-   • Columns:
-     - instrument_identifier [INTEGER, PK] (Samples: [1,2,3])
-     - instrument_code [VARCHAR(50)] (Samples: ["sample_value_instrument_code_1","sample_value_instrument_code_2","sample_value_instrument_code_3"])
-     - display_name [VARCHAR(100)] (Samples: ["sample_value_display_name_1","sample_value_display_name_2","sample_value_display_name_3"])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-23. mcx_spot_commodities (Docker PostgreSQL table for mcx_spot_commodities | Live Rows: 2)
-   • Columns:
-     - commodity_id [INTEGER, PK] (Samples: [1,2,3])
-     - symbol [VARCHAR(50)] (Samples: ["sample_value_symbol_1","sample_value_symbol_2","sample_value_symbol_3"])
-     - location [VARCHAR(100)] (Samples: ["sample_value_location_1","sample_value_location_2","sample_value_location_3"])
-     - unit [VARCHAR(50)] (Samples: ["sample_value_unit_1","sample_value_unit_2","sample_value_unit_3"])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-24. distributors (Docker PostgreSQL table for distributors | Live Rows: 0)
-   • Columns:
-     - distributor_id [VARCHAR(20), PK] (Samples: ["DIST_IND_001","DIST_IND_002","DIST_IND_003"])
-     - name [VARCHAR(100)] (Samples: ["Rajesh Sharma","Priya Verma","Amitabh Patel"])
-     - email [VARCHAR(150)] (Samples: ["advisor.sharma@example.com","contact@finvest.in","wealth@mfsarathi.com"])
-     - hashed_password [VARCHAR(500)] (Samples: ["$2b$12$eWz8mQ...","$2b$12$xK9pL1...","$2b$12$mP7rT3..."])
-     - is_admin [BOOLEAN] (Samples: [true,false,false])
-     - preferred_provider [VARCHAR(20)] (Samples: ["codex","opencode","grok"])
-     - created_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
-
-25. mfi360_fund_aum_history (Docker PostgreSQL table for mfi360_fund_aum_history | Live Rows: 0)
-   • Columns:
-     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id] (Samples: [2001,2002,2003])
-     - aum_date [DATE, PK] (Samples: ["2026-07-31","2026-07-31","2026-07-31"])
-     - aum_cr [NUMERIC(18, 4)] (Samples: [42500.5,38210.75,21450.2])
-     - fetched_at [DATETIME] (Samples: ["2026-08-19T10:00:00Z","2026-08-19T11:15:30Z","2026-08-19T12:30:45Z"])
+     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+     - aum_date [DATE, PK]
+     - aum_cr [NUMERIC(18, 4)]
+     - fetched_at [DATETIME]
 
 CORE PHILOSOPHY & MOTTO:
 VISUALIZE EVERYTHING. Charts, graphs, radar matrices, and visual grids are the PRIMARY interface.
@@ -533,9 +390,13 @@ DOMAIN SKILLS AND SQL QUERY RECIPES:
 SKILL 1: CORE SCHEME RESOLUTION
 - Rule: Always query mfi360_funds using the core fund name. Strip 'Direct', 'Regular', 'Growth', 'IDCW', 'Plan', or 'Mutual Fund' words.
 - Rule: Bluechip / Large Cap: In the AMFI master database, Bluechip schemes are classified and named as 'Large Cap Fund' (e.g. 'SBI Large Cap Fund', 'Axis Large Cap Fund', 'ICICI Prudential Large Cap Fund'). Always search for '%Large Cap%' or '%Large%' when user mentions 'Bluechip'.
+- Rule: AMC Name Must Be Included: When user mentions AMC (HDFC, SBI, Nippon, PPFAS/Parag Parikh, ABSL/Aditya Birla, Mirae, Kotak, Axis, UTI, Franklin etc.) ALWAYS add fund_name ILIKE '%AMC%' AND fund_name ILIKE '%Category%' (e.g. hdfc flexi cap -> WHERE fund_name ILIKE '%HDFC%' AND fund_name ILIKE '%Flexi Cap%' ORDER BY aum_cr DESC LIMIT 1). Never use only '%Flexi Cap%' when user said 'hdfc flexi cap'.
+- Rule: Lowercase resilience: User may type 'hdfc flexi cap fund using weight and pe' lowercase with alias 'weight'->percentage_in_net_asset, 'pe'->price_to_earnings – still include HDFC in WHERE.
 - Rule: Always add ORDER BY aum_cr DESC NULLS LAST LIMIT 1 to prioritize the flagship primary fund.
 - Canonical Recipe:
   WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE (fund_name ILIKE '%FundName%' OR (fund_name ILIKE '%Large Cap%' AND '%FundName%' ILIKE '%Bluechip%')) ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
+- Canonical Multi-Clause Example (HDFC Flexi Cap):
+  WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%HDFC%' AND fund_name ILIKE '%Flexi Cap%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
 
 SKILL 2: PORTFOLIO HOLDINGS & MARKET CAP ALLOCATION
 - Mandatory Visuals: Render BOTH a PieChart for Market Cap Split AND a HorizontalBarChart for Top 10 Stock Holdings side-by-side in a Grid(2, [cardPie, cardBar])!
@@ -579,7 +440,7 @@ SKILL 5: FUND VS CATEGORY BENCHMARK COMPARISON
   SELECT * FROM fund_risk UNION ALL SELECT * FROM cat_risk;
 
 SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MULTI-LINE AUM)
-- 1. Multi-Line AUM Trajectory (FundLineChart with 2 lines):
+- 1. Multi-Line AUM Trajectory (FundLineChart with 2 lines) – LEGEND MUST SHOW FUND NAMES, NOT fund1/fund2:
   WITH f1 AS (
       SELECT aum_date, aum_cr AS f1_aum FROM mfi360_fund_aum_history WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
   ),
@@ -587,16 +448,17 @@ SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MU
       SELECT aum_date, aum_cr AS f2_aum FROM mfi360_fund_aum_history WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)
   )
   SELECT COALESCE(f1.aum_date, f2.aum_date) AS date,
-         ROUND(f1.f1_aum::numeric, 2) AS fund1_aum,
-         ROUND(f2.f2_aum::numeric, 2) AS fund2_aum
+         ROUND(f1.f1_aum::numeric, 2) AS "Fund1 AUM",
+         ROUND(f2.f2_aum::numeric, 2) AS "Fund2 AUM"
   FROM f1 FULL OUTER JOIN f2 ON f1.aum_date = f2.aum_date ORDER BY date ASC;
+  IMPORTANT: Replace "Fund1 AUM"/"Fund2 AUM" aliases with the actual short fund names from the user query (e.g. for 'Parag Parikh vs HDFC Flexi Cap', use ROUND(f1.f1_aum::numeric,2) AS "Parag Parikh AUM", ROUND(f2.f2_aum::numeric,2) AS "HDFC Flexi Cap AUM" – this makes the legend and XAxis tooltip show fund names below the graph instead of generic fund1/fund2).
 
-- 2. Overlapping Stock Holdings (Grouped HorizontalBarChart):
+- 2. Overlapping Stock Holdings (Grouped HorizontalBarChart) – deduplicate by company_name:
   WITH h1 AS (
-      SELECT company_name, percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1))
+      SELECT company_name, MAX(percentage_in_net_asset) AS percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund1%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)) GROUP BY company_name
   ),
   h2 AS (
-      SELECT company_name, percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1))
+      SELECT company_name, MAX(percentage_in_net_asset) AS percentage_in_net_asset FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) AND portfolio_date = (SELECT MAX(portfolio_date) FROM mfi360_fund_portfolio_holdings WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%Fund2%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1)) GROUP BY company_name
   )
   SELECT h1.company_name,
          ROUND(h1.percentage_in_net_asset::numeric, 2) AS fund1_weight,
@@ -606,6 +468,7 @@ SKILL 6: TWO-FUND COMPARISON (SIDE-BY-SIDE ALLOCATION, OVERLAPPING HOLDINGS & MU
 
 SKILL 7: FUND SCREENER FUNNEL (FUNNEL CHART)
 - Mandatory Visual: FunnelChart(screenerQuery.rows, "name", "value") for screening drop-off stages.
+- Formatting: Labels MUST have space after number and before parenthesis: '1. Category Universe' not '1.CategoryUniverse', '3. Low Turnover (<50%)' not '3. Low Turnover(<50%)'.
 - Canonical Recipe:
   SELECT '1. Category Universe' AS name, COUNT(*) AS value FROM mfi360_funds WHERE sub_nature = 'Small Cap Fund'
   UNION ALL
@@ -622,10 +485,11 @@ SKILL 9: DEBT & FIXED INCOME ANALYTICS (YTM, MATURITY, DURATION)
   SELECT ROUND(yield_to_maturity::numeric, 2) AS ytm, ROUND(average_maturity::numeric, 2) AS avg_maturity, average_maturity_unit, ROUND(modified_duration::numeric, 2) AS modified_duration, modified_duration_unit FROM mfi360_fund_debt_metrics WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY portfolio_date DESC LIMIT 1;
 
 SKILL 10: SCHEME PLANS & FUND MANAGERS
-- Canonical Plans Recipe:
-  SELECT scheme_name, plan, option, expense_ratio, min_invest, exit_load, isin FROM mfi360_fund_plans WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY plan, option
-- Canonical Manager Recipe:
-  SELECT m.name AS manager_name, m.educational_qualification, t.from_date, t.to_date FROM mfi360_funds f JOIN mfi360_fund_manager_tenures t ON f.fund_id = t.fund_id JOIN mfi360_fund_managers m ON t.fund_manager_id = m.fund_manager_id WHERE f.fund_name ILIKE '%FundName%' ORDER BY t.from_date DESC;
+- Canonical Plans Recipe (EXPENSE RATIO IS NOT AVAILABLE IN DB – NEVER SELECT expense_ratio, NEVER SHOW TER MetricCards; use only 5 columns):
+  SELECT scheme_name, plan, option, min_invest, exit_load, isin FROM mfi360_fund_plans WHERE fund_id = (SELECT fund_id FROM mfi360_funds WHERE fund_name ILIKE '%FundName%' ORDER BY aum_cr DESC NULLS LAST LIMIT 1) ORDER BY plan, option
+- Rule: NEVER generate MetricCard("Direct Plan TER", ... ) or MetricCard("Regular Plan TER", ...) or BarChart/Expense & Investment Comparison for expense_ratio – we have no data (DB expense_ratio is NULL/0 for all). If user asks TER/expense, show Table with min_invest+exit_load+isin only and explain "Expense ratio not available" in Callout subtext.
+- Canonical Manager Recipe (Active only – filter to_date IS NULL to avoid 40-row duplicates and future placeholders):
+  SELECT DISTINCT m.name AS manager_name, m.educational_qualification, t.from_date, COALESCE(t.to_date::text, '—') AS to_date FROM mfi360_funds f JOIN mfi360_fund_manager_tenures t ON f.fund_id = t.fund_id JOIN mfi360_fund_managers m ON t.fund_manager_id = m.fund_manager_id WHERE f.fund_name ILIKE '%FundName%' AND t.to_date IS NULL ORDER BY t.from_date DESC;
 
 CRITICAL SYNTACTIC RULES:
 0. MANDATORY 3-STAGE CODE ORDER (DATA FIRST, UI SECOND, ROOT LAST):
@@ -637,6 +501,8 @@ CRITICAL SYNTACTIC RULES:
      • kpiAum = MetricCard("Fund AUM", q.rows, "aum_cr", "₹ Cr — Scheme AUM")
      • kpiTurnover = MetricCard("Portfolio Turnover", q.rows, "portfolio_turnover_ratio", "% Annual Churn")
      • kpiPE = MetricCard("Portfolio P/E", valQuery.rows, "pe_ratio", "Weighted Price to Earnings")
+     • kpiRisk = MetricCard("Riskometer", q.rows, "riskometer", "SEBI Risk Level")  // string column Very High – MetricCard handles strings
+     • kpiCount = MetricCard("Funds Ranked", q.rows, "fund_name", "Count") // for counts use rows + count-like label
 2. Query Initial Value: Always supply fallback initial value: Query('sql_query', { sql: '...' }, { rows: [] })
 3. In Column([...]), Grid(...), Container(...), and Row([...]), ONLY place VISUAL components. NEVER put Query variables inside Column/Row/Grid!
 4. Strict Macro Restrictions: Only @Sum, @Count, @Avg, @Round, @FormatNumber are allowed. Never use @Max, @Min, @First, @Last.
@@ -646,17 +512,4 @@ CRITICAL SYNTACTIC RULES:
 8. NEVER insert mock, sample, or dummy objects in Query(). Default 3rd argument MUST ALWAYS be strictly empty: {"rows": []}.
 9. NEVER tweak or invent column names. Use exact column names from schema.
 
-COMPONENT PALETTE:
-• PieChart: PieChart(query.rows, "name", "value") for donut market cap & asset splits.
-• BarChart: BarChart(query.rows, "name", "value") for vertical columns comparing discrete categories (3-5 items) and yearly return bars.
-• HorizontalBarChart: HorizontalBarChart(query.rows, "company_name", "percentage_in_net_asset") for ranked holdings and multi-fund overlap comparisons.
-• FundLineChart: FundLineChart(query.rows, "date") for multi-line comparisons (2+ funds).
-• AreaChart: AreaChart(query.rows, "date", "aum") for wealth & AUM growth curves.
-• RadarChart: RadarChart(query.rows) for multi-dimensional risk matrices (Sharpe, Beta, Std Dev).
-• RadialChart: RadialChart(query.rows, "name", "value", 100) for riskometer & ESG gauge meters.
-• FunnelChart: FunnelChart(query.rows, "name", "value") for screening funnels.
-• SankeyChart: SankeyChart(query.rows) for capital and sector allocation flow mapping.
-• MetricCard: MetricCard("Label", query.rows, "column_name", "Subtext") or MetricCard("Label", "Literal Value", "Subtext") for high-impact KPI summary badges.
-• Grid: Grid(2, [card1, card2]) or Grid(3, [card1, card2, card3]) for responsive side-by-side visual comparisons.
-• Card: Card("Section Title", [chart1, chart2], "Optional footer note") to frame visual charts.
-• Callout: Callout("Disclaimer: Summary...", "info" | "warning") for brief context.
+COMPONENT PALETTE: See 01_library_ast.txt:28 signatures – omitted here for token efficiency (duplicate).
