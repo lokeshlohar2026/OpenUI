@@ -3,9 +3,8 @@ import re
 import json
 import time
 import asyncio
-import hashlib
 from pathlib import Path
-from typing import AsyncGenerator, Optional, Dict, Any, Tuple
+from typing import AsyncGenerator, Optional, Dict, Any
 import httpx
 from dotenv import load_dotenv
 from logger import log_llm_interaction
@@ -32,6 +31,9 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 OPENCODE_BASE_URL = (os.getenv("OPENCODE_BASE_URL") or os.getenv("OPENCODE_ZEN_GO_BASE_URL") or "https://opencode.ai/zen/go/v1").rstrip("/")
 OPENCODE_MODEL = os.getenv("OPENCODE_MODEL", "mimo-v2.5-pro")
 
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
+
 
 def nullable_env(name: str, default: str = "null") -> Optional[str]:
     value = os.getenv(name, default).strip()
@@ -40,23 +42,11 @@ def nullable_env(name: str, default: str = "null") -> Optional[str]:
 
 GROQ_REASONING_EFFORT = nullable_env("GROQ_REASONING_EFFORT")
 OPENCODE_REASONING_EFFORT = nullable_env("OPENCODE_REASONING_EFFORT")
+OPENROUTER_REASONING_EFFORT = nullable_env("OPENROUTER_REASONING_EFFORT")
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 PROMPT_FILE = Path(__file__).parent / "openui_prompt.txt"
 
-# ── Semantic Cache (in-memory, unlimited, per-query, TTL 3600) ─────────────────
-LLM_CACHE: Dict[str, Tuple[float, str]] = {}
-LLM_CACHE_TTL = 3600  # seconds, sliding per entry
-_prompt_hash: Optional[str] = None
-
-def _normalize_query_for_cache(q: str) -> str:
-    # Same normalization as db.py resolve_best_fund_name (without DB import to avoid cycle)
-    n = q.lower().strip()
-    n = re.sub(r"\s+", " ", n)
-    # Minimal AMC synonym collapse for cache hit across case/alias
-    for pat, repl in [(r"\bhdfc\b","hdfc"),(r"\bsbi\b","sbi"),(r"\bnippon\b","nippon"),(r"\bppfas\b","parag"),(r"\babsl\b","absl"),(r"\bblue\s*chip\b","large cap")]:
-        n = re.sub(pat, repl, n, flags=re.IGNORECASE)
-    return n
 
 def load_system_prompt() -> str:
     """
@@ -68,7 +58,6 @@ def load_system_prompt() -> str:
     
     Falls back to openui_prompt.txt if the /prompts directory is not present.
     """
-    global _prompt_hash
     if PROMPTS_DIR.exists() and PROMPTS_DIR.is_dir():
         prompt_parts = []
         for file in sorted(PROMPTS_DIR.glob("*.txt")):
@@ -76,14 +65,10 @@ def load_system_prompt() -> str:
             if text:
                 prompt_parts.append(text)
         if prompt_parts:
-            prompt = "\n\n".join(prompt_parts)
-            _prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:8]
-            return prompt
+            return "\n\n".join(prompt_parts)
 
     if PROMPT_FILE.exists():
-        prompt = PROMPT_FILE.read_text(encoding="utf-8").strip()
-        _prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:8]
-        return prompt
+        return PROMPT_FILE.read_text(encoding="utf-8").strip()
 
     return "You are an AI financial assistant generating OpenUI declarative code."
 
@@ -225,6 +210,62 @@ async def stream_opencode(prompt_text: str, query: str) -> AsyncGenerator[str, N
         yield chunk
 
 
+async def stream_openrouter(prompt_text: str, query: str) -> AsyncGenerator[str, None]:
+    """Streams response from OpenRouter API with native Prompt Caching."""
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        yield 'root = Column([TextContent("Error: OPENROUTER_API_KEY is not set.")])'
+        return
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "http://localhost:8001",
+        "X-Title": "MF Saarthi OpenUI",
+        "Content-Type": "application/json",
+    }
+    payload: Dict[str, Any] = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "system", "content": prompt_text},
+            {"role": "user", "content": query},
+        ],
+        "temperature": 0.2,
+        "stream": True,
+    }
+    if OPENROUTER_REASONING_EFFORT:
+        payload["reasoning_effort"] = OPENROUTER_REASONING_EFFORT
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", f"{OPENROUTER_BASE_URL}/chat/completions", headers=headers, json=payload) as response:
+                if response.status_code == 429 and attempt < max_retries - 1:
+                    await asyncio.sleep(2.5 * (attempt + 1))
+                    continue
+                if response.status_code != 200:
+                    err_body = await response.aread()
+                    yield f'root = Column([TextContent("OpenRouter API error {response.status_code}: {err_body.decode(errors="ignore")}")])'
+                    return
+                try:
+                    async for line in response.aiter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content") or delta.get("content", "")
+                            if content:
+                                yield content
+                        except Exception:
+                            continue
+                    return
+                except GeneratorExit:
+                    return
+
+
 
 def reorder_ast(code: str) -> str:
     """
@@ -356,32 +397,24 @@ async def stream_openui_chain(user_query: str) -> AsyncGenerator[str, None]:
     Main LangChain-compatible streaming entrypoint.
     Loads the system prompt and streams from the active LLM provider with telemetry logging.
     Post-processes the full output with AST normalizers before final yield.
-    Implements in-memory semantic cache (unlimited, TTL 3600) for 0s on repeats.
     """
     prompt = load_system_prompt()
     provider = LLM_PROVIDER
     model = (
-        OPENCODE_MODEL if provider == "opencode"
-        else (GEMINI_MODEL if provider == "gemini" else GROQ_MODEL)
+        OPENROUTER_MODEL if provider == "openrouter"
+        else (OPENCODE_MODEL if provider == "opencode"
+              else (GEMINI_MODEL if provider == "gemini" else GROQ_MODEL))
     )
-
-    # Semantic cache – check before LLM call (frontend-only, no DB change)
-    norm = _normalize_query_for_cache(user_query)
-    cache_key = f"{_prompt_hash}:{hashlib.sha256(norm.encode()).hexdigest()}" if _prompt_hash else norm
-    now = time.time()
-    if cache_key in LLM_CACHE:
-        ts, cached_ast = LLM_CACHE[cache_key]
-        if now - ts < LLM_CACHE_TTL:
-            yield cached_ast
-            log_llm_interaction(provider=provider, model=model, user_query=user_query, generated_code=cached_ast, elapsed_ms=0.05, error=None)
-            return
 
     start_t = time.perf_counter()
     accumulated = ""
     err = None
 
     try:
-        if provider == "gemini":
+        if provider == "openrouter":
+            async for chunk in stream_openrouter(prompt, user_query):
+                accumulated += chunk
+        elif provider == "gemini":
             async for chunk in stream_gemini(prompt, user_query):
                 accumulated += chunk
         elif provider == "opencode":
@@ -396,9 +429,6 @@ async def stream_openui_chain(user_query: str) -> AsyncGenerator[str, None]:
         # 2. Normalize Root/Stack/Container → Column
         processed = reorder_ast(accumulated)
         processed = normalize_ast_root(processed)
-
-        # Store in semantic cache (in-memory unlimited, TTL 3600)
-        LLM_CACHE[cache_key] = (time.time(), processed)
 
         # Stream the fully-processed code as a single payload
         yield processed
