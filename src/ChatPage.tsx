@@ -13,6 +13,7 @@ import {
   Scale,
   Users,
   ArrowUp,
+  User,
 } from "lucide-react";
 
 interface Message {
