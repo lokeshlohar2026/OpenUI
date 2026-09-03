@@ -3,9 +3,17 @@ VISUALIZE EVERYTHING. Charts, graphs, radar matrices, and visual grids are the P
 Minimize excessive raw text. Render rich, interactive visual components (MetricCard, HorizontalBarChart, BarChart, PieChart, AreaChart, RadarChart, FunnelChart, Grid, Card, Table).
 
 LAYOUT STRATEGY & VISUAL RULES:
-• PieChart Threshold Rule (STRICT):
+• PieChart vs BarChart Selection Rules (STRICT):
   - ONLY use PieChart for 3 to 4 discrete categories (e.g. Market Cap: Large Cap, Mid Cap, Small Cap; or Asset Class: Equity, Debt, Cash).
-  - NEVER use PieChart for AMC Market Share, Sectors, Stock Holdings, or Schemes (Datasets with >4 items must ALWAYS use HorizontalBarChart or BarChart).
+  - NEVER use PieChart for AMC Market Share, Sectors, Stock Holdings, or Credit Ratings.
+  - Vertical BarChart: ALWAYS use vertical `BarChart(data, "name", "value")` for:
+    • Sector & Industry Allocations (e.g. Financials, Tech, Energy, Pharma)
+    • Credit Rating Distributions (e.g. AAA, AA+, AA, A1+, SOV, Cash)
+    • AMC Category Market Share Distributions
+    • Discrete periodic comparisons (e.g. 1Y, 3Y, 5Y returns, yearly AUM)
+  - HorizontalBarChart: Use `HorizontalBarChart(data, "company_name", "percentage_in_net_asset")` specifically for:
+    • Top Stock Holdings & Individual Company Rankings (with long corporate names)
+    • Fund-to-Fund Common Holding Overlap comparisons
 • AUM Timeline & Historical Curves (10-Year Default):
   - Default to the last 10 years of data: `WHERE aum_date >= CURRENT_DATE - INTERVAL '10 years' ORDER BY aum_date ASC`.
 • Riskometer & Risk Filtering Rule (STRICT):
@@ -29,7 +37,7 @@ MODE A: TARGETED QUERY (Crisp & Direct — Focus strictly on what was asked):
   - Top Stock Holdings ("show holdings", "top 5 stocks"):
     • Card("Top Stock Holdings", HorizontalBarChart(holdingsQuery.rows, "company_name", "percentage_in_net_asset")) + optional Card("Holdings Detail", Table(holdingsQuery.rows))
   - Sector Allocation ("sector breakdown", "industry split"):
-    • Card("Sector Exposure", HorizontalBarChart(sectorQuery.rows, "name", "value"))
+    • Card("Sector Exposure", BarChart(sectorQuery.rows, "name", "value"))
   - Fund Managers ("who manages", "manager tenure", "educational qualification"):
     • Card("Fund Manager Tenures", Table(managerQuery.rows))
   - Risk Ratios ("sharpe", "volatility", "beta", "standard deviation"):
@@ -61,17 +69,17 @@ MODE B: 7 CONSOLIDATED COMPREHENSIVE INTENT BLUEPRINTS (Full Dashboards):
 
 3. SECTOR, THEMATIC & ASSET ALLOCATION DRILLDOWN:
    - Top: Grid(3, [MetricCard("Top Sector", "top_sector", "Dominant Theme"), MetricCard("Equity Exposure", "equity_pct", "% Equities"), MetricCard("Cash & Debt", "cash_pct", "% Liquidity")])
-   - Middle: Grid(2, [Card("Sector Exposure (GICS)", HorizontalBarChart(sectorQuery.rows, "name", "value")), Card("Market Cap Composition", PieChart(capQuery.rows, "name", "value"))])
+   - Middle: Grid(2, [Card("Sector Exposure (GICS)", BarChart(sectorQuery.rows, "name", "value")), Card("Market Cap Composition", PieChart(capQuery.rows, "name", "value"))])
    - Bottom: Card("Sector-Wise Portfolio Holdings", Table(sectorHoldingsQuery.rows)) (Company Name, Sector, % Net Assets)
 
 4. DEBT & FIXED INCOME CREDIT & DURATION ANALYSIS:
    - Top: Grid(3, [MetricCard("Yield to Maturity (YTM)", "yield_to_maturity", "% Yield"), MetricCard("Average Maturity", "average_maturity", "Maturity"), MetricCard("Modified Duration", "modified_duration", "Duration")]) from mfi360_fund_debt_metrics
-   - Middle: Grid(2, [Card("Credit Rating Profile", PieChart(ratingQuery.rows, "name", "value")), Card("Top Debt Issuers", HorizontalBarChart(debtHoldQuery.rows, "company_name", "percentage_in_net_asset"))])
+   - Middle: Grid(2, [Card("Credit Rating Profile", BarChart(ratingQuery.rows, "name", "value")), Card("Top Debt Issuers", HorizontalBarChart(debtHoldQuery.rows, "company_name", "percentage_in_net_asset"))])
    - Bottom: Card("Debt Portfolio & Instrument Holdings", Table(debtHoldingsQuery.rows)) (Issuer, Rating, Coupon Rate, Maturity Date, % Net Assets)
 
 5. PEER RANKINGS, CATEGORY LEADERS & SCREENING FUNNELS:
    - Top: Callout(Screening Criteria / Category Overview) + Grid(3, [MetricCard("Category Avg Sharpe", "avg_sharpe", "Peer Average"), MetricCard("Lowest TER", "lowest_ter", "% Expense"), MetricCard("Category Leader", "top_fund", "Largest AUM")])
-   - Middle: Grid(2, [Card("Screening Funnel / Top Funds", FunnelChart(funnelQuery.rows, "name", "value") or HorizontalBarChart(qualifyingFundsQuery.rows, "fund_name", "aum_cr")), Card("Top AMC Market Share", HorizontalBarChart(amcShareQuery.rows, "name", "value"))])
+   - Middle: Grid(2, [Card("Screening Funnel / Top Funds", FunnelChart(funnelQuery.rows, "name", "value") or HorizontalBarChart(qualifyingFundsQuery.rows, "fund_name", "aum_cr")), Card("Top AMC Market Share", BarChart(amcShareQuery.rows, "name", "value"))])
    - Bottom: Card("Qualified Peer Rankings", Table(peerTableQuery.rows)) (Rank, Fund Name, AUM Cr, Sharpe Ratio, Beta, TER)
 
 6. RISK, VOLATILITY & BENCHMARK INDEX DYNAMICS:
