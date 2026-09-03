@@ -1,4 +1,4 @@
-﻿DATABASE SCHEMA & RELATIONSHIP MAP (Live PostgreSQL Engine - 28 Tables):
+DATABASE SCHEMA & RELATIONSHIP MAP (Live PostgreSQL Engine - 28 Tables):
 
 TABLE RELATIONSHIPS & JOIN GRAPH (HOW TABLES CONNECT):
 • mfi360_funds (Central Mutual Fund Master):
@@ -39,8 +39,8 @@ COMPLETE 28-TABLE SPECIFICATIONS:
    - mf_id [INTEGER, FK -> mfi360_amcs.mf_id]
    - fund_name [VARCHAR(300)]
    - nature [VARCHAR(50)] — Equity, Debt, Hybrid, Other
-   - sub_nature [VARCHAR(50)] — Large Cap, Mid Cap, Small Cap, Flexi Cap, Liquid, etc.
-   - riskometer [VARCHAR(50)] — Low, Moderately Low, Moderate, Moderately High, High, Very High
+   - sub_nature [VARCHAR(50)] — 'Large Cap Fund', 'Mid Cap Fund', 'Small Cap Fund', 'Flexi Cap Fund', 'Multi Cap Fund', 'Liquid Fund', etc. (ALWAYS filter with `sub_nature ILIKE '%<Keyword>%'`)
+   - riskometer [VARCHAR(50)] — Low, Moderately Low, Moderate, Moderately High, High, Very High (All Equity funds are 'Very High'; use `riskometer ILIKE '%High%'` for high risk)
    - fund_manager [ARRAY of VARCHAR] — List of active manager names
    - aum_cr [NUMERIC(18, 4)] — Assets Under Management in Crores
    - aum_date [VARCHAR(20)]

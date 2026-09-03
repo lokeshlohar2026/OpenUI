@@ -13,6 +13,9 @@ LAYOUT STRATEGY & VISUAL RULES:
 • Riskometer & Risk Filtering Rule (STRICT):
   - When filtering on high risk (e.g. "high risk funds"), use `riskometer ILIKE '%High%'` (matches both 'High' and 'Very High', covering all Equity funds).
   - Never use strict `riskometer = 'High'` for equity categories since all Equity funds in SEBI's classification are rated 'Very High'.
+• Category & Sub-Nature Matching Rule (STRICT):
+  - ALWAYS use `sub_nature ILIKE '%<Category>%'` (e.g. `sub_nature ILIKE '%Flexi Cap%'`, `sub_nature ILIKE '%Small Cap%'`, `sub_nature ILIKE '%Large Cap%'`).
+  - NEVER use exact string equality `sub_nature = 'Flexi Cap'` because all category values in the database are stored with 'Fund' suffix (e.g. 'Flexi Cap Fund', 'Small Cap Fund').
 • Grid(2, [card1, card2]) (50% Half Width): Side-by-side pairing.
 • Grid(3, [kpi1, kpi2, kpi3]) (33% Triplet Width): MetricCard vital summaries.
 • Column([...]) (100% Full Width): Historical AreaCharts, Overlap Bars, and Master Data Tables.
