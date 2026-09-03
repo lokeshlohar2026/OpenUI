@@ -213,11 +213,26 @@ function validateRenderableOpenUI(code: string, isStreaming: boolean): string {
     return isStreaming ? defaultWireframeSkeleton : failed;
   }
 
-  let testCode = code;
+  let testCode = code.trim();
   if (isStreaming) {
     const closed = extractClosedStatements(code);
-    if (closed && /^\s*root\s*=/m.test(closed)) {
+    if (closed) {
       testCode = closed;
+    }
+  }
+
+  // If code starts directly with a component/Column/Grid/Card without 'root =', auto-wrap it
+  if (!/^\s*root\s*=/m.test(testCode)) {
+    if (testCode.startsWith("Column(") || testCode.startsWith("Grid(") || testCode.startsWith("Card(") || testCode.startsWith("Callout(")) {
+      testCode = `root = ${testCode}`;
+    } else if (testCode.includes("Column(") || testCode.includes("Grid(")) {
+      // Find the last component block
+      const lines = testCode.split("\n");
+      const lastLine = lines[lines.length - 1];
+      if (lastLine.startsWith("Column(") || lastLine.startsWith("Grid(")) {
+        lines[lines.length - 1] = `root = ${lastLine}`;
+        testCode = lines.join("\n");
+      }
     }
   }
 

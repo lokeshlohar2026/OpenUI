@@ -544,7 +544,13 @@ async def decide_layout_turn(user_query: str) -> str:
         raw = re.sub(r"^```(?:python|openui)?\s*", "", raw, flags=re.MULTILINE)
         raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE).strip()
         match = re.search(r'(root\s*=\s*.+)', raw, re.DOTALL)
-        result_ast = match.group(1).strip() if match else (raw if ("root =" in raw or "Column(" in raw) else "")
+        result_ast = match.group(1).strip() if match else (raw if ("root =" in raw or "Column(" in raw or "Grid(" in raw or "Card(" in raw) else "")
+        if result_ast and not re.search(r'^\s*root\s*=', result_ast, re.MULTILINE):
+            if result_ast.startswith("Column(") or result_ast.startswith("Grid(") or result_ast.startswith("Card("):
+                result_ast = f"root = {result_ast}"
+            else:
+                result_ast = f"root = Column([{result_ast}])"
+        result_ast = normalize_ast_root(result_ast)
         written_tokens = max(1, len(accum) // 4)
         log_turn1_layout_completed(OPENCODE_MODEL, elapsed_ms, written_tokens, ttft_ms=ttft_ms, layout_ast=result_ast)
         return result_ast
