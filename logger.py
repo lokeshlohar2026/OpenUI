@@ -85,7 +85,7 @@ def log_turn_telemetry(
         _log("DOMAIN INJECT", f"[{dom_str}]  ({len(domain_files)} files | ~{domain_tokens:,} tokens) [1st-Query Priming]")
 
     # 3. User Query
-    query_tokens = max(1, len(user_query) // 4)
+    query_tokens = max(1, round(len(user_query) / 3.45))
     _log("USER QUERY", f'"{user_query}"  ({len(user_query)} chars | ~{query_tokens} tokens)')
 
     # 4. Pre-Call Context Budget
