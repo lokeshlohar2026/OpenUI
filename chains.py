@@ -494,7 +494,7 @@ async def decide_layout_turn(user_query: str) -> str:
     t0 = time.perf_counter()
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0, read=30.0)) as client:
             async with client.stream(
                 "POST",
                 f"{OPENCODE_BASE_URL.rstrip('/')}/chat/completions",

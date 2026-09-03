@@ -139,15 +139,18 @@ def log_turn1_layout_stream_end(total_chars: int) -> None:
     )
 
 
-def log_turn1_layout_completed(model: str, elapsed_ms: float, total_tokens: int, ttft_ms: float = 0.0, layout_ast: str = "") -> None:
+def log_turn1_layout_completed(
+    model: str, elapsed_ms: float, total_tokens: int, ttft_ms: float = 0.0,
+    layout_ast: str = "", error: Optional[str] = None,
+) -> None:
     """Logs Turn 1 Layout Decider throughput, tokens, and wireframe."""
+    status = "ERROR" if error else "OK"
     stream_ms = max(0.0, elapsed_ms - ttft_ms)
     tps = round(total_tokens / (stream_ms / 1000), 1) if stream_ms > 0 else 0.0
-    _log(
-        "TURN 1 DONE",
-        f"opencode/{model}  |  OK  |  ~{total_tokens:,} tokens generated ({stream_ms/1000:.1f}s stream)  |  {tps} tok/s",
-        elapsed_ms,
-    )
+    detail = f"opencode/{model}  |  {status}  |  ~{total_tokens:,} tokens generated ({stream_ms/1000:.1f}s stream)  |  {tps} tok/s"
+    if error:
+        detail += f"  |  {error[:120]}"
+    _log("TURN 1 DONE", detail, elapsed_ms)
     if layout_ast:
         _raw_write(
             f"\n{'-' * 80}\n"
