@@ -1,124 +1,148 @@
 import os
-import time
-import json
 import logging
 from logging.handlers import RotatingFileHandler
-from datetime import datetime
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone, timedelta
+from typing import Any, Optional
 
-# Ensure logs directory exists
+# ── Single unified log file ───────────────────────────────────────────────────
 LOGS_DIR = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 
-# General App Logger
-app_logger = logging.getLogger("openui_app")
-app_logger.setLevel(logging.INFO)
-if not app_logger.handlers:
-    app_handler = RotatingFileHandler(
-        os.path.join(LOGS_DIR, "app.log"),
+_LOG_FILE = os.path.join(LOGS_DIR, "openui.log")
+
+_logger = logging.getLogger("openui")
+_logger.setLevel(logging.INFO)
+if not _logger.handlers:
+    _handler = RotatingFileHandler(
+        _LOG_FILE,
         maxBytes=10 * 1024 * 1024,
         backupCount=5,
         encoding="utf-8",
     )
-    app_formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    app_handler.setFormatter(app_formatter)
-    app_logger.addHandler(app_handler)
-
-# Dedicated DB Calls Logger
-db_logger = logging.getLogger("openui_db")
-db_logger.setLevel(logging.INFO)
-if not db_logger.handlers:
-    db_handler = RotatingFileHandler(
-        os.path.join(LOGS_DIR, "db.log"),
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
-        encoding="utf-8",
-    )
-    db_formatter = logging.Formatter(
-        "[%(asctime)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    db_handler.setFormatter(db_formatter)
-    db_logger.addHandler(db_handler)
-
-# Dedicated LLM Interactions Logger
-llm_logger = logging.getLogger("openui_llm")
-llm_logger.setLevel(logging.INFO)
-if not llm_logger.handlers:
-    llm_handler = RotatingFileHandler(
-        os.path.join(LOGS_DIR, "llm.log"),
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
-        encoding="utf-8",
-    )
-    llm_formatter = logging.Formatter(
-        "[%(asctime)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    llm_handler.setFormatter(llm_formatter)
-    llm_logger.addHandler(llm_handler)
+    _handler.setFormatter(logging.Formatter("%(message)s"))
+    _logger.addHandler(_handler)
 
 
-def log_db_query(
-    sql: str,
-    row_count: int,
-    elapsed_ms: float,
-    error: Optional[str] = None,
-    cached: bool = False,
-    repaired_from: Optional[str] = None,
-    sample_data: Optional[Any] = None,
-):
-    """Logs database query execution with full telemetry."""
-    status = "ERROR" if error else ("CACHED" if cached else "SUCCESS")
-    log_entry = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "status": status,
-        "elapsed_ms": elapsed_ms,
-        "row_count": row_count,
-        "sql": sql,
-        "error": error,
-        "repaired_from": repaired_from,
-        "sample_preview": sample_data[:2] if isinstance(sample_data, list) else sample_data,
-    }
-    
-    msg_lines = [
-        f"─── [DB QUERY: {status}] ─── ({elapsed_ms} ms, {row_count} rows)",
-        f"SQL: {sql}",
-    ]
-    if repaired_from:
-        msg_lines.append(f"Auto-Repaired From: {repaired_from}")
+def _raw_write(text: str) -> None:
+    """Write raw text directly to the log file — used for LLM stream chunks."""
+    try:
+        with open(_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(text)
+    except Exception:
+        pass
+
+
+def _ts() -> str:
+    ist = timezone(timedelta(hours=5, minutes=30))
+    return datetime.now(ist).strftime("%H:%M:%S IST")
+
+
+def _log(event: str, detail: str = "", elapsed_ms: float = 0.0) -> None:
+    """Write one clean line to openui.log."""
+    parts = [f"[{_ts()}]", f"[{event:<18}]"]
+    if elapsed_ms:
+        parts.append(f"({elapsed_ms:.0f}ms)")
+    if detail:
+        parts.append(detail)
+    _logger.info("  ".join(parts))
+
+
+# ── Timeline events ───────────────────────────────────────────────────────────
+
+def log_request_received(query: str) -> None:
+    _raw_write("\n\n\n\n" + ("═" * 72) + "\n")
+    _log("REQUEST RECV", f'"{query[:120]}"  ({len(query)} chars)')
+
+
+def log_prompt_loaded(files: list, total_chars: int, prompt_hash: str) -> None:
+    token_est = total_chars // 4
+    files_str = ", ".join(files) if files else "openui_prompt.txt (fallback)"
+    _log("PROMPT LOADED",
+         f"{len(files)} files  |  {total_chars:,} chars (~{token_est:,} tokens)  |  hash={prompt_hash[:8]}")
+    _log("PROMPT FILES", files_str)
+
+
+def log_llm_started(provider: str, model: str, temperature: float = 0.2) -> None:
+    _log("LLM START", f"{provider}/{model}  |  temp={temperature}")
+
+
+def log_llm_ttft(elapsed_ms: float) -> None:
+    _log("LLM TTFT", "First token received", elapsed_ms)
+
+
+def log_llm_thinking_start() -> None:
+    """Write the LLM thinking header — everything until THINKING END is raw reasoning."""
+    _raw_write(
+        f"\n{'─' * 72}\n"
+        f"[{_ts()}]  [LLM THINKING ▼ START]  (internal reasoning begins)\n"
+        f"{'─' * 72}\n"
+    )
+
+
+def log_llm_thinking_chunk(chunk: str) -> None:
+    """Write raw reasoning tokens directly to log."""
+    _raw_write(chunk)
+
+
+def log_llm_thinking_end(total_chars: int, elapsed_ms: float = 0.0) -> None:
+    """Write the LLM thinking footer."""
+    dur_str = f" in {elapsed_ms/1000:.1f}s" if elapsed_ms > 0 else ""
+    _raw_write(
+        f"\n{'─' * 72}\n"
+        f"[{_ts()}]  [LLM THINKING ▲ END]  ({total_chars} chars reasoning{dur_str})\n"
+        f"{'─' * 72}\n\n"
+    )
+
+
+def log_llm_stream_start() -> None:
+    """Write the LLM stream header — everything until STREAM END is raw LLM output."""
+    _raw_write(
+        f"\n{'─' * 72}\n"
+        f"[{_ts()}]  [LLM STREAM ▼ START]  (raw output begins)\n"
+        f"{'─' * 72}\n"
+    )
+
+
+def log_llm_stream_chunk(chunk: str) -> None:
+    """Write a raw LLM chunk directly — no timestamp, live output."""
+    _raw_write(chunk)
+
+
+def log_llm_stream_end(total_chars: int) -> None:
+    """Write the LLM stream footer after all tokens have arrived."""
+    _raw_write(
+        f"\n{'─' * 72}\n"
+        f"[{_ts()}]  [LLM STREAM ▲ END]  ({total_chars} chars received)\n"
+        f"{'─' * 72}\n\n"
+    )
+
+
+def log_llm_completed(provider: str, model: str, elapsed_ms: float,
+                       raw_tokens_est: int, ttft_ms: float = 0.0, error: Optional[str] = None) -> None:
+    status = "ERROR" if error else "OK"
+    # Generation duration is the streaming decode phase: (total elapsed - TTFT prefill)
+    gen_duration_sec = ((elapsed_ms - ttft_ms) / 1000.0) if (ttft_ms > 0 and elapsed_ms > ttft_ms) else (elapsed_ms / 1000.0)
+    gen_tps = (raw_tokens_est / gen_duration_sec) if gen_duration_sec > 0 else 0.0
+    detail = f"{provider}/{model}  |  {status}  |  ~{raw_tokens_est} tokens generated ({gen_duration_sec:.1f}s stream)  |  {gen_tps:.1f} tok/s"
     if error:
-        msg_lines.append(f"Error: {error}")
-    else:
-        msg_lines.append(f"Sample Data: {json.dumps(sample_data[:2] if isinstance(sample_data, list) else sample_data, default=str)}")
-    msg_lines.append("────────────────────────────────────────────────────────────")
-    
-    db_logger.info("\n".join(msg_lines))
-    app_logger.info(f"DB [{status}] {elapsed_ms}ms | rows: {row_count} | SQL: {sql[:100]}...")
+        detail += f"  |  {error[:120]}"
+    _log("LLM DONE", detail, elapsed_ms)
 
 
-def log_llm_interaction(
-    provider: str,
-    model: str,
-    user_query: str,
-    generated_code: str,
-    elapsed_ms: float,
-    error: Optional[str] = None,
-):
-    """Logs LLM interaction including prompt query, generated OpenUI code, and latency."""
-    status = "ERROR" if error else "SUCCESS"
-    msg_lines = [
-        f"─── [LLM CALL: {status}] ─── ({provider} / {model} in {elapsed_ms} ms)",
-        f"User Query: {user_query}",
-        "Generated OpenUI AST Code:",
-        generated_code if generated_code else "(empty)",
-    ]
+def log_ast_processing(raw_lines: int, processed_lines: int, modified: bool) -> None:
+    change = "MODIFIED" if modified else "CLEAN (no changes)"
+    _log("AST POST-PROC", f"{change}  |  {raw_lines} → {processed_lines} lines")
+
+
+def log_db_query(sql: str, elapsed_ms: float, row_count: int,
+                 error: Optional[str] = None) -> None:
+    status = "ERR" if error else "OK"
+    detail = f"({elapsed_ms:.0f}ms)  {status}  {row_count} rows  |  {sql[:100]}"
     if error:
-        msg_lines.append(f"Error: {error}")
-    msg_lines.append("────────────────────────────────────────────────────────────")
-    
-    llm_logger.info("\n".join(msg_lines))
-    app_logger.info(f"LLM [{status}] {provider}/{model} in {elapsed_ms}ms | query: '{user_query}'")
+        detail += f"  |  {error[:80]}"
+    _log("DB QUERY", detail)
+
+
+def log_renderer_started(query_nodes: int, visual_components: int, ast_lines: int) -> None:
+    _log("RENDERER START",
+         f"{query_nodes} Query nodes  |  {visual_components} visual components  |  {ast_lines} AST lines")

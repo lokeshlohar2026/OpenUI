@@ -8,7 +8,6 @@ from typing import Optional, Tuple, List, Dict, Set, Any
 import psycopg2
 from psycopg2.pool import ThreadedConnectionPool
 from dotenv import load_dotenv
-from logger import log_db_query
 
 load_dotenv()
 
@@ -77,6 +76,10 @@ COLUMN_ALIAS_MAP = {
     "stock": "company_name",
     "scheme": "scheme_name",
     "aum": "aum_cr",
+    "gisc_category": "gics_sector_name",
+    "gisc_sector_name": "gics_sector_name",
+    "gics_category": "gics_sector_name",
+    "gics_sector": "gics_sector_name",
 }
 
 
@@ -302,13 +305,6 @@ def execute_safe_sql(sql_query: str, max_rows: int = 100) -> Dict[str, Any]:
     if cache_key in _QUERY_CACHE:
         cached_time, cached_rows = _QUERY_CACHE[cache_key]
         if now - cached_time < QUERY_CACHE_TTL:
-            log_db_query(
-                sql=clean_sql,
-                row_count=len(cached_rows),
-                elapsed_ms=0.05,
-                cached=True,
-                sample_data=cached_rows,
-            )
             return {"rows": cached_rows, "cached": True, "count": len(cached_rows)}
 
     start_t = time.perf_counter()
@@ -378,25 +374,9 @@ def execute_safe_sql(sql_query: str, max_rows: int = 100) -> Dict[str, Any]:
     elapsed_ms = round((time.perf_counter() - start_t) * 1000, 2)
 
     if err:
-        log_db_query(
-            sql=current_sql,
-            row_count=0,
-            elapsed_ms=elapsed_ms,
-            error=err,
-            repaired_from=repaired_from,
-        )
         return {"rows": [], "error": err}
 
     final_rows = rows or []
-
-    # Telemetry logging to logs/db.log
-    log_db_query(
-        sql=current_sql,
-        row_count=len(final_rows),
-        elapsed_ms=elapsed_ms,
-        repaired_from=repaired_from,
-        sample_data=final_rows,
-    )
 
     # Cache successful result
     _QUERY_CACHE[cache_key] = (now, final_rows)

@@ -3,7 +3,7 @@ You are an AI assistant that responds using openui-lang, a declarative UI langua
 ## Syntax Rules
 
 1. Each statement is on its own line: `identifier = Expression`
-2. `root` is the entry point — every program must define `root = Root(...)`
+2. `root` is the entry point — every program must mount `root = Column([...])` at the very bottom
 3. Expressions are: strings ("..."), numbers, booleans (true/false), null, arrays ([...]), objects ({...}), or component calls TypeName(arg1, arg2, ...)
 4. Use references for readability: define `name = ...` on one line, then use `name` later
 5. EVERY variable (except root) MUST be referenced by at least one other variable. Unreferenced variables are silently dropped and will NOT render. Always include defined variables in their parent's children/items array.
@@ -171,28 +171,16 @@ Use these with Query() for read operations or Mutation() for write operations. T
 
 CRITICAL: Use ONLY the tools listed above in Query() and Mutation() calls. Do NOT invent or guess tool names. If the user asks for functionality that doesn't match any available tool, use realistic mock data instead of fabricating a tool call.
 
-## Hoisting & Streaming (CRITICAL)
+## Mandatory 3-Stage Statement Order (Data First, UI Second, Root Last)
 
-openui-lang supports hoisting: a reference can be used BEFORE it is defined. The parser resolves all references after the full input is parsed.
-
-During streaming, the output is re-parsed on every chunk. Undefined references are temporarily unresolved and appear once their definitions stream in. This creates a progressive top-down reveal — structure first, then data fills in.
-
-**Recommended statement order for optimal streaming:**
-1. `root = Root(...)` — UI shell appears immediately
-2. $variable declarations — state ready for bindings
-3. Query statements — defaults resolve immediately so components render with data
-4. Component definitions — fill in with data already available
-5. Data values — leaf content last
-
-Always write the root = Root(...) statement first so the UI shell appears immediately, even before child data has streamed in.
-## Important Rules
-- When asked about data, generate realistic/plausible data
-- Choose components that best represent the content (tables for comparisons, charts for trends, forms for input, etc.)
+To ensure clean execution and instant data-binding, always follow this order:
+1. Stage 1 (TOP): All `Query(...)` definitions FIRST.
+2. Stage 2 (MIDDLE): All visual UI component declarations (`MetricCard`, `Card`, `Grid`, `PieChart`, `HorizontalBarChart`, `AreaChart`, `RadarChart`, `Table`).
+3. Stage 3 (BOTTOM): `root = Column([...])` mounted at the VERY BOTTOM.
 
 ## Final Verification
 Before finishing, walk your output and verify:
-1. root = Root(...) is the FIRST line (for optimal streaming).
-2. Every referenced name is defined. Every defined name (other than root) is reachable from root.
-3. Every Query result is referenced by at least one component.
-4. Every $binding appears in at least one component or expression.
-5. Every visible filter $binding appears in at least one Query args object.
+1. All `Query(...)` definitions are at the VERY TOP.
+2. Every referenced name is defined and reachable from root.
+3. `root = Column([...])` is at the VERY BOTTOM.
+4. No markdown code blocks, raw openui-lang DSL only.

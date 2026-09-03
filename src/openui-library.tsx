@@ -47,6 +47,33 @@ const CHART_COLORS = [
   "#f97316", // Orange
 ];
 
+type DataRow = Record<string, any>;
+
+// Safe type guards & object accessors for dynamic/unknown inputs
+export function safeString(val: unknown, fallback: string = ""): string {
+  if (val === null || val === undefined) return fallback;
+  return String(val);
+}
+
+export function safeNumber(val: unknown, fallback: number = 0): number {
+  if (typeof val === "number" && !Number.isNaN(val)) return val;
+  if (typeof val === "string") {
+    const parsed = parseFloat(val);
+    return Number.isNaN(parsed) ? fallback : parsed;
+  }
+  return fallback;
+}
+
+export function safeProp<T = any>(obj: unknown, key: string, fallback?: T): T | undefined {
+  if (!obj || typeof obj !== "object") return fallback;
+  return (obj as Record<string, any>)[key] ?? fallback;
+}
+
+export function safeArray<T = any>(val: unknown): T[] {
+  if (Array.isArray(val)) return val as T[];
+  return [];
+}
+
 function renderAnyNode(node: any, renderNode?: (n: any) => React.ReactNode): React.ReactNode {
   if (node === null || node === undefined) return null;
   if (React.isValidElement(node)) return node;
@@ -67,7 +94,7 @@ function renderAnyNode(node: any, renderNode?: (n: any) => React.ReactNode): Rea
 }
 
 // Helper: "The NULL Kicker" - Strips null, undefined, NaN, and blank rows before charts
-function extractRows(data: any, defaultKey?: string): Record<string, any>[] {
+function extractRows(data: any, defaultKey?: string): DataRow[] {
   if (!data) return [];
   let raw: any[] = [];
   if (Array.isArray(data)) raw = data;
@@ -308,7 +335,7 @@ function MetricCard(fullProps: any) {
   }
   const rawValues = Object.values(props).filter((v) => v !== null && v !== undefined && v !== "");
 
-  let dataRows: any[] = [];
+  let dataRows: DataRow[] = [];
   if (Array.isArray(props.data)) dataRows = props.data;
   else if (Array.isArray(props.value)) dataRows = props.value;
   else if (Array.isArray(props.rows)) dataRows = props.rows;
@@ -321,8 +348,8 @@ function MetricCard(fullProps: any) {
     }
   }
 
-  const sample = dataRows.length > 0 ? dataRows[0] : null;
-  const stringValues = rawValues.filter((v) => typeof v === "string" && !v.startsWith("http"));
+  const sample: DataRow | null = dataRows.length > 0 ? dataRows[0] : null;
+  const stringValues = rawValues.filter((v): v is string => typeof v === "string" && !v.startsWith("http"));
 
   let targetKey: string | undefined = props.column || props.key || props.field;
   if (!targetKey && sample) {
@@ -721,7 +748,7 @@ function HorizontalBarChart(fullProps: any) {
   const isMultiSeries = numericKeys.length > 1;
 
   // Deduplicate rows by labelKey to avoid duplicate Y-ticks (e.g. overlapping holdings with same company_name multiple instruments)
-  const dedupedMap = new Map<string, Record<string, any>>();
+  const dedupedMap = new Map<string, DataRow>();
   rows.forEach((r) => {
     const key = String((r as any)[labelKey] ?? "");
     if (!dedupedMap.has(key)) dedupedMap.set(key, r);
@@ -813,7 +840,7 @@ function BarChart(fullProps: any) {
   const actualX = (xKey && xKey in sample) ? xKey : Object.keys(sample).find((k) => typeof sample[k] === "string") || xKey;
   const actualY = (yKey && yKey in sample) ? yKey : Object.keys(sample).find((k) => typeof sample[k] === "number" || (!isNaN(Number(sample[k])) && k !== actualX)) || yKey;
 
-  const normalizedRows = rows.map((r) => ({
+  const normalizedRows: DataRow[] = rows.map((r) => ({
     ...r,
     [actualX]: String(r[actualX] ?? ""),
     [actualY]: Number(r[actualY]) || 0,

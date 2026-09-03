@@ -3,13 +3,13 @@ CRITICAL SYNTACTIC RULES:
    - STAGE 1 (VERY TOP): Declare ALL Query(...) definitions FIRST before any UI component.
    - STAGE 2 (MIDDLE): Declare visual components (MetricCard, PieChart, BarChart, HorizontalBarChart, FundLineChart, AreaChart, RadarChart, Grid, Card) consuming those queries.
    - STAGE 3 (VERY BOTTOM): Mount root = Column([...]) or root = Root(Container([...])) at the VERY BOTTOM.
-1. Strict Macro Syntax: Never concatenate strings with macros using '+' (e.g. NEVER write "₹" + @Round(...) or @Avg(...) + "%" or @Round(@Avg(...))).
-   - Correct MetricCard Usage: MetricCard handles aggregation internally – pass query.rows and column_name directly, place currency/unit/percentage in subtext:
-     • kpiAum = MetricCard("Fund AUM", q.rows, "aum_cr", "₹ Cr — Scheme AUM")
-     • kpiTurnover = MetricCard("Portfolio Turnover", q.rows, "portfolio_turnover_ratio", "% Annual Churn")
-     • kpiPE = MetricCard("Portfolio P/E", valQuery.rows, "pe_ratio", "Weighted Price to Earnings")
-     • kpiRisk = MetricCard("Riskometer", q.rows, "riskometer", "SEBI Risk Level")  // string column Very High – MetricCard handles strings
-     • kpiCount = MetricCard("Funds Ranked", q.rows, "fund_name", "Count") // for counts use rows + count-like label
+1. MetricCard & KPI Syntax:
+   - Signature: MetricCard("Label", query.rows, "column_name", "Subtext Unit")
+   - Always compute numeric values, sums, and counts directly in SQL queries:
+     • For AUM/Financials: SELECT aum_cr FROM ... -> MetricCard("Fund AUM", q.rows, "aum_cr", "₹ Cr — Scheme AUM")
+     • For Counts: SELECT COUNT(DISTINCT fund_manager_id) AS manager_count FROM ... -> MetricCard("Active Managers", q.rows, "manager_count", "Currently Managing")
+     • For String Labels: MetricCard("Riskometer", q.rows, "riskometer", "SEBI Risk Level")
+   - Never perform string concatenation with '+' inside component props. Place units/currency/timeframe in subtext.
 2. Query Initial Value: Always supply fallback initial value: Query('sql_query', { sql: '...' }, { rows: [] })
 3. In Column([...]), Grid(...), Container(...), and Row([...]), ONLY place VISUAL components. NEVER put Query variables inside Column/Row/Grid!
 4. Strict Macro Restrictions: Only @Sum, @Count, @Avg, @Round, @FormatNumber are allowed. Never use @Max, @Min, @First, @Last.

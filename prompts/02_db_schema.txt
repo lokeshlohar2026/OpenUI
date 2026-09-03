@@ -3,28 +3,26 @@ DATABASE SCHEMA & RELATIONSHIP MAP (Live PostgreSQL Engine):
 TABLE RELATIONSHIPS & JOIN GRAPH (HOW TABLES CONNECT):
 • mfi360_funds (Central Master Entity):
   - JOIN mfi360_amcs ON mfi360_funds.mf_id = mfi360_amcs.mf_id (Fund House / AMC)
-  - JOIN mfi360_fund_plans ON mfi360_funds.fund_id = mfi360_fund_plans.fund_id (Direct/Regular Plans, Expense Ratios, Exit Loads)
+  - JOIN mfi360_fund_plans ON mfi360_funds.fund_id = mfi360_fund_plans.fund_id (Direct/Regular Plans, Expense Ratios, Exit Loads, ISIN)
   - JOIN mfi360_fund_portfolio_holdings ON mfi360_funds.fund_id = mfi360_fund_portfolio_holdings.fund_id (Monthly Stock & Debt Holdings)
   - JOIN mfi360_fund_aum_history ON mfi360_funds.fund_id = mfi360_fund_aum_history.fund_id (Historical AUM Growth Timeline)
   - JOIN mfi360_scheme_valuation_metrics ON mfi360_funds.fund_id = mfi360_scheme_valuation_metrics.fund_id (Portfolio P/E, P/B, Dividend Yield)
   - JOIN mfi360_fund_debt_metrics ON mfi360_funds.fund_id = mfi360_fund_debt_metrics.fund_id (Average Maturity, Duration, YTM)
   - JOIN mfi360_fund_manager_tenures ON mfi360_funds.fund_id = mfi360_fund_manager_tenures.fund_id (Scheme Management Tenures)
-  - JOIN amfi_fund_benchmarks ON mfi360_funds.fund_id = amfi_fund_benchmarks.fund_id (Benchmark Mappings)
 
 • mfi360_fund_plans (Scheme Plan Variants):
   - JOIN mfi360_scheme_risk_ratios ON mfi360_fund_plans.scheme_id = mfi360_scheme_risk_ratios.scheme_id (Risk Ratios: Sharpe, Beta, Standard Deviation)
-  - JOIN amfi_isin_master ON mfi360_fund_plans.isin = amfi_isin_master.isin (AMFI Master Details)
+  - JOIN mfi360_fund_plan_dividend_history ON mfi360_fund_plans.scheme_id = mfi360_fund_plan_dividend_history.scheme_id (Dividend History)
+  - JOIN mfi360_fund_plans_nav_history ON mfi360_fund_plans.scheme_id = mfi360_fund_plans_nav_history.scheme_id (NAV History)
 
 • mfi360_fund_manager_tenures (Manager Tenures):
   - JOIN mfi360_fund_managers ON mfi360_fund_manager_tenures.fund_manager_id = mfi360_fund_managers.fund_manager_id (Manager Qualifications & Bio)
-  - JOIN mfi360_amcs ON mfi360_fund_manager_tenures.amc_id = mfi360_amcs.mf_id (Manager AMC)
 
-• Indices & Benchmark Trackers:
-  - amfi_fund_benchmarks.index_id = amfi_portal_indices.index_id
-  - amfi_portal_indices_history.index_id = amfi_portal_indices.index_id
-  - mfi360_indices_history.index_id = mfi360_indices.index_id
-  - mcx_icomdex_indices_history.index_id = mcx_icomdex_indices.index_id
-  - mcx_spot_market_prices.commodity_id = mcx_spot_commodities.commodity_id
+• Indices & Commodity Trackers:
+  - mfi360_indices_history JOIN mfi360_indices ON mfi360_indices_history.index_id = mfi360_indices.index_id
+  - mcx_icomdex_indices_history JOIN mcx_icomdex_indices ON mcx_icomdex_indices_history.instrument_identifier = mcx_icomdex_indices.instrument_identifier
+  - mcx_spot_market_prices JOIN mcx_spot_commodities ON mcx_spot_market_prices.commodity_id = mcx_spot_commodities.commodity_id
+  - amfi_portal_indices_history JOIN amfi_portal_indices ON amfi_portal_indices_history.index_id = amfi_portal_indices.index_id
 
 COMPLETE TABLE SPECIFICATIONS:
 
@@ -36,7 +34,8 @@ COMPLETE TABLE SPECIFICATIONS:
      - company_name [VARCHAR(300), PK]
      - issuer_name [VARCHAR(300)]
      - company_isin [VARCHAR(20)]
-     - sector_name [VARCHAR(200)]
+     - sector_name [VARCHAR(200)] — Sub-industry / Debt category
+     - gics_sector_name [VARCHAR(200)] — Macro Sector for Equity (e.g. Financials, Industrials, IT)
      - instrument_name [VARCHAR(100), PK]
      - market_cap_caption [VARCHAR(50)]
      - quantity [NUMERIC(20, 4)]

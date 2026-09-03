@@ -49,28 +49,40 @@ def _clamp_rows(v) -> int:
 @app.post("/api/tools/sql_query")
 async def sql_query_post(request: Request):
     """Universal Dynamic SQL Execution endpoint called by OpenUI Query('sql_query', ...)"""
+    import time
+    from logger import log_db_query
     try:
         body = await request.json()
         query = (body.get("sql") or body.get("query") or "").strip()
         if not query:
             return JSONResponse(status_code=400, content={"rows": [], "error": "sql is required"})
         max_rows = _clamp_rows(body.get("max_rows", 100))
+        t0 = time.perf_counter()
         res = execute_safe_sql(query, max_rows=max_rows)
+        elapsed = round((time.perf_counter() - t0) * 1000, 1)
+        log_db_query(query, elapsed, len(res.get("rows", [])))
         return JSONResponse(content=res)
     except Exception as e:
+        log_db_query(query if "query" in dir() else "?", 0, 0, error=str(e))
         return JSONResponse(status_code=500, content={"rows": [], "error": str(e)})
 
 
 @app.get("/api/tools/sql_query")
-def sql_query_get(sql: str = "", query: str = "", max_rows: int = 100):
+async def sql_query_get(request: Request, sql: str = "", query: str = "", max_rows: int = 100):
     """GET variant of Universal Dynamic SQL execution."""
+    import time
+    from logger import log_db_query
     target_sql = (sql or query).strip()
     if not target_sql:
         return JSONResponse(status_code=400, content={"rows": [], "error": "sql is required"})
     try:
+        t0 = time.perf_counter()
         res = execute_safe_sql(target_sql, max_rows=_clamp_rows(max_rows))
+        elapsed = round((time.perf_counter() - t0) * 1000, 1)
+        log_db_query(target_sql, elapsed, len(res.get("rows", [])))
         return JSONResponse(content=res)
     except Exception as e:
+        log_db_query(target_sql, 0, 0, error=str(e))
         return JSONResponse(status_code=500, content={"rows": [], "error": str(e)})
 
 
@@ -83,16 +95,21 @@ async def chat_stream(request: Request):
     Streaming endpoint called by OpenUI ChatPage.
     Accepts JSON body: { message: str } and streams openui-lang tokens.
     """
+    from logger import log_request_received
+
     try:
         body = await request.json()
         user_message = body.get("message", "").strip()
+        session_id = body.get("session_id") or body.get("chat_id")
         if not user_message:
             return JSONResponse(status_code=400, content={"error": "message is required"})
         if len(user_message) > 2000:
             return JSONResponse(status_code=400, content={"error": "message too long (max 2000 chars)"})
 
+        log_request_received(user_message)
+
         return StreamingResponse(
-            stream_openui_chain(user_message),
+            stream_openui_chain(user_message, session_id=session_id),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

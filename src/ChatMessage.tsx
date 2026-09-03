@@ -150,6 +150,63 @@ function rewriteMacros(code: string): string {
   return code;
 }
 
+function validateRenderableOpenUI(code: string, isStreaming: boolean): string {
+  const loading = 'root = Column([TextContent("Generating visual insight...")])';
+  const failed = 'root = Column([Callout("Unable to render this response. The generated OpenUI payload was incomplete or invalid.", "warning")])';
+
+  if (!code.trim()) {
+    return isStreaming ? loading : failed;
+  }
+
+  let parens = 0;
+  let brackets = 0;
+  let braces = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+
+  for (const char of code) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      continue;
+    }
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      continue;
+    }
+    if (inSingleQuote || inDoubleQuote) {
+      continue;
+    }
+    if (char === "(") parens++;
+    else if (char === ")") parens--;
+    else if (char === "[") brackets++;
+    else if (char === "]") brackets--;
+    else if (char === "{") braces++;
+    else if (char === "}") braces--;
+    if (parens < 0 || brackets < 0 || braces < 0) {
+      return isStreaming ? loading : failed;
+    }
+  }
+
+  if (parens !== 0 || brackets !== 0 || braces !== 0 || inSingleQuote || inDoubleQuote) {
+    return isStreaming ? loading : failed;
+  }
+
+  if (!/^\s*root\s*=/m.test(code)) {
+    return isStreaming ? loading : failed;
+  }
+
+  return code;
+}
+
 export function ChatMessage({ text, isStreaming = false, timestamp, elapsedMs }: ChatMessageProps) {
   const formatElapsed = (ms?: number) => {
     if (ms === undefined || ms === null) return null;
@@ -207,8 +264,8 @@ export function ChatMessage({ text, isStreaming = false, timestamp, elapsedMs }:
     // Apply Topological Sort so Queries -> Leaf Components -> Containers -> Root execute in 100% valid DAG order
     code = topologicalSortOpenUI(code);
 
-    return code;
-  }, [text]);
+    return validateRenderableOpenUI(code, isStreaming);
+  }, [text, isStreaming]);
 
   const toolProvider = useMemo(
     () => ({
@@ -315,4 +372,3 @@ export function ChatMessage({ text, isStreaming = false, timestamp, elapsedMs }:
     </div>
   );
 }
-

@@ -57,6 +57,7 @@ const SUGGESTIONS = [
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [input, setInput] = useState("");
   const [currentStream, setCurrentStream] = useState("");
   const [loading, setLoading] = useState(false);
@@ -108,7 +109,7 @@ export default function ChatPage() {
       const response = await fetch(`${base}/api/v1/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: textToSend }),
+        body: JSON.stringify({ message: textToSend, session_id: sessionId }),
       });
 
       if (!response.ok) throw new Error(`Server returned ${response.status}`);
@@ -151,8 +152,7 @@ export default function ChatPage() {
           elapsedMs,
         },
       ]);
-    }
- finally {
+    } finally {
       setLoading(false);
       setCurrentStream("");
     }
@@ -166,6 +166,7 @@ export default function ChatPage() {
   };
 
   const handleNewChat = () => {
+    setSessionId(crypto.randomUUID());
     setMessages([]);
     setCurrentStream("");
     setInput("");
