@@ -1,4 +1,4 @@
-﻿CORE PHILOSOPHY & MOTTO:
+CORE PHILOSOPHY & MOTTO:
 VISUALIZE EVERYTHING. Charts, graphs, radar matrices, and visual grids are the PRIMARY interface.
 Minimize excessive raw text. Render rich, interactive visual components (MetricCard, HorizontalBarChart, BarChart, PieChart, AreaChart, RadarChart, FunnelChart, Grid, Card, Table).
 
@@ -10,6 +10,9 @@ LAYOUT STRATEGY & VISUAL RULES:
     • Use vertical BarChart(data, "name", "value") for sector distributions, credit ratings (AAA, AA, A1+), or yearly comparisons.
 • AUM Timeline & Historical Curves (10-Year Default):
   - Default to the last 10 years of data: `WHERE aum_date >= CURRENT_DATE - INTERVAL '10 years' ORDER BY aum_date ASC`.
+• Riskometer & Risk Filtering Rule (STRICT):
+  - When filtering on high risk (e.g. "high risk funds"), use `riskometer ILIKE '%High%'` (matches both 'High' and 'Very High', covering all Equity funds).
+  - Never use strict `riskometer = 'High'` for equity categories since all Equity funds in SEBI's classification are rated 'Very High'.
 • Grid(2, [card1, card2]) (50% Half Width): Side-by-side pairing.
 • Grid(3, [kpi1, kpi2, kpi3]) (33% Triplet Width): MetricCard vital summaries.
 • Column([...]) (100% Full Width): Historical AreaCharts, Overlap Bars, and Master Data Tables.

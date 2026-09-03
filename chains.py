@@ -458,13 +458,10 @@ async def decide_layout_turn(user_query: str) -> str:
         pass
 
     layout_system_prompt = (
-        "You are the OpenUI Layout Architect. Based on the user's mutual fund query, determine if the query is Mode A (Targeted single-metric lookup) or Mode B (Comprehensive multi-card deep dive or comparison).\n\n"
-        "ROUTING RULES:\n"
-        "1. If the user query is a TARGETED SINGLE-METRIC query (Mode A — e.g. top stock holdings only, fund managers only, risk ratios only, AUM history only, expense ratio/plans only, single valuation KPI lookup), output EXACTLY:\n"
-        "SKIP_SCAFFOLD\n\n"
-        "2. If the user query is a COMPREHENSIVE DEEP-DIVE, FACTSHEET, TWO-FUND COMPARISON, or THEMATIC DRILLDOWN (Mode B), select the matching Intent Blueprint from the catalog below and output ONLY the declarative UI component tree scaffold with query slot variables.\n\n"
+        "You are the OpenUI Layout Architect. Based on the user's mutual fund query, "
+        "select the matching Intent Blueprint from the catalog below and output ONLY the declarative UI component tree scaffold with query slot variables.\n\n"
         f"{blueprints_catalog}\n\n"
-        "STRICT SCAFFOLD RULES FOR MODE B:\n"
+        "STRICT SCAFFOLD RULES:\n"
         "1. Output the UI components using standard query slot variables (e.g. fundInfo.rows, holdings.rows, marketCap.rows, aumHistory.rows, plans.rows, risk.rows, valuation.rows, overview.rows, overlap.rows, sector.rows).\n"
         "2. MetricCard: Pass (label, queryVar.rows, colName, subtitle). Example: MetricCard('Fund AUM', fundInfo.rows, 'aum_cr', '₹ Cr')\n"
         "3. Charts & Tables: Pass Card(title, Chart(queryVar.rows, ...)). Example: Card('Top 10 Stock Holdings', HorizontalBarChart(holdings.rows, 'company_name', 'percentage_in_net_asset'))\n"
@@ -474,7 +471,7 @@ async def decide_layout_turn(user_query: str) -> str:
 
     messages = [
         {"role": "system", "content": layout_system_prompt},
-        {"role": "user", "content": f"User query: {user_query}\nOutput SKIP_SCAFFOLD (Mode A) or the declarative UI scaffold (Mode B):"}
+        {"role": "user", "content": f"User query: {user_query}\nOutput the declarative UI scaffold with query slots:"}
     ]
 
     payload: Dict[str, Any] = {
@@ -543,9 +540,6 @@ async def decide_layout_turn(user_query: str) -> str:
 
         elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
         raw = accum.strip()
-        if "SKIP_SCAFFOLD" in raw or raw == "SKIP_SCAFFOLD":
-            log_turn1_layout_completed(OPENCODE_MODEL, elapsed_ms, 1, ttft_ms=ttft_ms, layout_ast="[MODE A DIRECT FAST-PATH -> SKIP_SCAFFOLD]")
-            return ""
 
         raw = re.sub(r"^```(?:python|openui)?\s*", "", raw, flags=re.MULTILINE)
         raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE).strip()
