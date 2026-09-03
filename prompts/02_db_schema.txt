@@ -1,135 +1,258 @@
-DATABASE SCHEMA & RELATIONSHIP MAP (Live PostgreSQL Engine):
+﻿DATABASE SCHEMA & RELATIONSHIP MAP (Live PostgreSQL Engine - 28 Tables):
 
 TABLE RELATIONSHIPS & JOIN GRAPH (HOW TABLES CONNECT):
-• mfi360_funds (Central Master Entity):
+• mfi360_funds (Central Mutual Fund Master):
   - JOIN mfi360_amcs ON mfi360_funds.mf_id = mfi360_amcs.mf_id (Fund House / AMC)
   - JOIN mfi360_fund_plans ON mfi360_funds.fund_id = mfi360_fund_plans.fund_id (Direct/Regular Plans, Expense Ratios, Exit Loads, ISIN)
   - JOIN mfi360_fund_portfolio_holdings ON mfi360_funds.fund_id = mfi360_fund_portfolio_holdings.fund_id (Monthly Stock & Debt Holdings)
   - JOIN mfi360_fund_aum_history ON mfi360_funds.fund_id = mfi360_fund_aum_history.fund_id (Historical AUM Growth Timeline)
-  - JOIN mfi360_scheme_valuation_metrics ON mfi360_funds.fund_id = mfi360_scheme_valuation_metrics.fund_id (Portfolio P/E, P/B, Dividend Yield)
+  - JOIN mfi360_scheme_valuation_metrics ON mfi360_funds.fund_id = mfi360_scheme_valuation_metrics.fund_id (Portfolio P/E, P/B, Dividend Yield, Market Cap)
   - JOIN mfi360_fund_debt_metrics ON mfi360_funds.fund_id = mfi360_fund_debt_metrics.fund_id (Average Maturity, Duration, YTM)
   - JOIN mfi360_fund_manager_tenures ON mfi360_funds.fund_id = mfi360_fund_manager_tenures.fund_id (Scheme Management Tenures)
 
-• mfi360_fund_plans (Scheme Plan Variants):
+• mfi360_fund_plans (Scheme Plan Variants & Performance):
   - JOIN mfi360_scheme_risk_ratios ON mfi360_fund_plans.scheme_id = mfi360_scheme_risk_ratios.scheme_id (Risk Ratios: Sharpe, Beta, Standard Deviation)
-  - JOIN mfi360_fund_plan_dividend_history ON mfi360_fund_plans.scheme_id = mfi360_fund_plan_dividend_history.scheme_id (Dividend History)
-  - JOIN mfi360_fund_plans_nav_history ON mfi360_fund_plans.scheme_id = mfi360_fund_plans_nav_history.scheme_id (NAV History)
+  - JOIN mfi360_fund_plan_dividend_history ON mfi360_fund_plans.scheme_id = mfi360_fund_plan_dividend_history.scheme_id (Dividend Distribution History)
+  - JOIN mfi360_fund_plans_nav_history ON mfi360_fund_plans.scheme_id = mfi360_fund_plans_nav_history.scheme_id (Daily Historical NAVs)
+  - JOIN amfi_isin_master ON mfi360_fund_plans.isin = amfi_isin_master.isin_primary (AMFI Scheme Metadata)
+  - JOIN bse_isin_master ON mfi360_fund_plans.isin = bse_isin_master.isin (BSE Product Metadata)
 
 • mfi360_fund_manager_tenures (Manager Tenures):
   - JOIN mfi360_fund_managers ON mfi360_fund_manager_tenures.fund_manager_id = mfi360_fund_managers.fund_manager_id (Manager Qualifications & Bio)
 
-• Indices & Commodity Trackers:
+• Taxonomy & Category Benchmarks:
+  - amfi_sub_categories: Links sub_category_id to sub_category_name and category_name (Equity, Debt, Hybrid, Solution Oriented, Other)
+  - amfi_fund_benchmarks: Links sub_category_id to scheme_name and mandated benchmark name
+  - benchmark_reference_map: Resolves benchmark string across MFI360, AMFI portal, and MCX
+
+• Market Indices & Commodity Trackers:
   - mfi360_indices_history JOIN mfi360_indices ON mfi360_indices_history.index_id = mfi360_indices.index_id
+  - amfi_portal_indices_history JOIN amfi_portal_indices ON amfi_portal_indices_history.index_id = amfi_portal_indices.index_id
   - mcx_icomdex_indices_history JOIN mcx_icomdex_indices ON mcx_icomdex_indices_history.instrument_identifier = mcx_icomdex_indices.instrument_identifier
   - mcx_spot_market_prices JOIN mcx_spot_commodities ON mcx_spot_market_prices.commodity_id = mcx_spot_commodities.commodity_id
-  - amfi_portal_indices_history JOIN amfi_portal_indices ON amfi_portal_indices_history.index_id = amfi_portal_indices.index_id
+  - mfi360_composite_benchmark_history (Custom composite benchmarks tracked by composite_key)
 
-COMPLETE TABLE SPECIFICATIONS:
+COMPLETE 28-TABLE SPECIFICATIONS:
 
-1. mfi360_fund_portfolio_holdings (Docker PostgreSQL table for mfi360_fund_portfolio_holdings | Live Rows: 9548521)
-   • Columns:
-     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
-     - scheme_id [INTEGER]
-     - portfolio_date [DATE, PK]
-     - company_name [VARCHAR(300), PK]
-     - issuer_name [VARCHAR(300)]
-     - company_isin [VARCHAR(20)]
-     - sector_name [VARCHAR(200)] — Sub-industry / Debt category
-     - gics_sector_name [VARCHAR(200)] — Macro Sector for Equity (e.g. Financials, Industrials, IT)
-     - instrument_name [VARCHAR(100), PK]
-     - market_cap_caption [VARCHAR(50)]
-     - quantity [NUMERIC(20, 4)]
-     - market_value [NUMERIC(20, 4)]
-     - percentage_in_net_asset [NUMERIC(8, 4)]
-     - coupon_rate [NUMERIC(14, 4)]
-     - maturity_date [DATE]
-     - rating [VARCHAR(50)]
-     - rating_agency [VARCHAR(100)]
-     - is_new_in [BOOLEAN]
-     - fetched_at [DATETIME]
+1. mfi360_funds (Central Mutual Fund Master | Live Table)
+   - fund_id [INTEGER, PK]
+   - mf_id [INTEGER, FK -> mfi360_amcs.mf_id]
+   - fund_name [VARCHAR(300)]
+   - nature [VARCHAR(50)] — Equity, Debt, Hybrid, Other
+   - sub_nature [VARCHAR(50)] — Large Cap, Mid Cap, Small Cap, Flexi Cap, Liquid, etc.
+   - riskometer [VARCHAR(50)] — Low, Moderately Low, Moderate, Moderately High, High, Very High
+   - fund_manager [ARRAY of VARCHAR] — List of active manager names
+   - aum_cr [NUMERIC(18, 4)] — Assets Under Management in Crores
+   - aum_date [VARCHAR(20)]
+   - portfolio_turnover_ratio [NUMERIC(10, 4)]
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
 
-2. mfi360_fund_manager_tenures (Docker PostgreSQL table for mfi360_fund_manager_tenures | Live Rows: 11139)
-   • Columns:
-     - fund_manager_id [INTEGER, PK, FK -> mfi360_fund_managers.fund_manager_id]
-     - amc_id [INTEGER, FK -> mfi360_amcs.mf_id]
-     - fund_id [INTEGER, PK]
-     - fund_name [VARCHAR(300)]
-     - from_date [DATE, PK]
-     - to_date [DATE]
-     - fetched_at [DATETIME]
+2. mfi360_amcs (Asset Management Companies / Fund Houses | Live Table)
+   - mf_id [INTEGER, PK]
+   - name [VARCHAR(300)] — AMC Name (e.g. Nippon India Mutual Fund, HDFC Mutual Fund, PPFAS)
+   - amfi_amc_code [INTEGER]
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
 
-3. mfi360_fund_plans (Docker PostgreSQL table for mfi360_fund_plans | Live Rows: 7764)
-   • Columns:
-     - scheme_id [INTEGER, PK]
-     - fund_id [INTEGER, FK -> mfi360_funds.fund_id]
-     - scheme_name [VARCHAR(300)]
-     - plan [VARCHAR(10)]
-     - option [VARCHAR(10)]
-     - amfi_code [VARCHAR(20)]
-     - amfi_amc_code [INTEGER]
-     - isin [VARCHAR(20)]
-     - launch_date [DATE]
-     - expense_ratio [NUMERIC(6, 4)]
-     - min_invest [NUMERIC(12, 2)]
-     - exit_load [JSONB]
-     - fetched_at [DATETIME]
+3. mfi360_fund_plans (Scheme Plan Variants & Expenses | Live Table)
+   - scheme_id [INTEGER, PK]
+   - fund_id [INTEGER, FK -> mfi360_funds.fund_id]
+   - scheme_name [VARCHAR(300)]
+   - plan [VARCHAR(10)] — Direct / Regular
+   - option [VARCHAR(10)] — Growth / IDCW
+   - amfi_code [VARCHAR(20)]
+   - amfi_amc_code [INTEGER]
+   - isin [VARCHAR(20)]
+   - launch_date [DATE]
+   - expense_ratio [NUMERIC(6, 4)] — TER in %
+   - min_invest [NUMERIC(12, 2)]
+   - exit_load [JSONB] — Structured exit load details
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
 
-4. mfi360_scheme_risk_ratios (Docker PostgreSQL table for mfi360_scheme_risk_ratios | Live Rows: 5690)
-   • Columns:
-     - scheme_id [INTEGER, PK, FK -> mfi360_fund_plans.scheme_id]
-     - standard_deviation [NUMERIC(12, 4)]
-     - beta [NUMERIC(12, 4)]
-     - sharpe_ratio [NUMERIC(12, 4)]
-     - fetched_at [DATETIME]
+4. mfi360_fund_portfolio_holdings (Monthly Portfolio Holdings | Live Table)
+   - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+   - scheme_id [INTEGER]
+   - portfolio_date [DATE, PK] — Monthly disclosure date
+   - company_name [VARCHAR(300), PK] — Stock or Debt issuer name
+   - issuer_name [VARCHAR(300)]
+   - company_isin [VARCHAR(20)]
+   - sector_name [VARCHAR(200)] — Sub-industry / Debt category
+   - gics_sector_name [VARCHAR(200)] — Macro Sector (Financials, Information Technology, Industrials, etc.)
+   - instrument_name [VARCHAR(100), PK] — Equity Shares, Debentures, Treasury Bills, Cash & Cash Equivalent
+   - market_cap_caption [VARCHAR(50)] — Large Cap, Mid Cap, Small Cap, Unlisted
+   - quantity [NUMERIC(20, 4)]
+   - market_value [NUMERIC(20, 4)] — Market Value in Lakhs/Crores
+   - percentage_in_net_asset [NUMERIC(8, 4)] — % weight in portfolio
+   - coupon_rate [NUMERIC(14, 4)] — For debt instruments
+   - maturity_date [DATE] — For debt instruments
+   - rating [VARCHAR(50)] — AAA, AA+, SOV, A1+, etc.
+   - rating_agency [VARCHAR(100)] — CRISIL, ICRA, CARE, IND
+   - is_new_in [BOOLEAN] — True if newly entered in current month
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
 
-5. mfi360_funds (Docker PostgreSQL table for mfi360_funds | Live Rows: 2017)
-   • Columns:
-     - fund_id [INTEGER, PK]
-     - mf_id [INTEGER, FK -> mfi360_amcs.mf_id]
-     - fund_name [VARCHAR(300)]
-     - nature [VARCHAR(50)]
-     - sub_nature [VARCHAR(50)]
-     - riskometer [VARCHAR(50)]
-     - fund_manager [ARRAY]
-     - aum_cr [NUMERIC(18, 4)]
-     - aum_date [VARCHAR(20)]
-     - portfolio_turnover_ratio [NUMERIC(10, 4)]
-     - fetched_at [DATETIME]
+5. mfi360_fund_aum_history (Historical AUM Growth | Live Table)
+   - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+   - aum_date [DATE, PK]
+   - aum_cr [NUMERIC(18, 4)]
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
 
-6. mfi360_scheme_valuation_metrics (Docker PostgreSQL table for mfi360_scheme_valuation_metrics | Live Rows: 1977)
-   • Columns:
-     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
-     - portfolio_date [DATE]
-     - price_to_earnings [NUMERIC(12, 4)]
-     - price_to_book [NUMERIC(12, 4)]
-     - dividend_yield [NUMERIC(12, 4)]
-     - market_cap [NUMERIC(20, 4)]
-     - portfolio_turnover_ratio [NUMERIC(12, 4)]
-     - fetched_at [DATETIME]
+6. mfi360_fund_plans_nav_history (Historical Daily NAV | Live Table)
+   - scheme_id [INTEGER, PK, FK -> mfi360_fund_plans.scheme_id]
+   - nav_date [DATE, PK]
+   - nav [NUMERIC(14, 4)]
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
 
-7. mfi360_fund_debt_metrics (Docker PostgreSQL table for mfi360_fund_debt_metrics | Live Rows: 1977)
-   • Columns:
-     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
-     - portfolio_date [DATE]
-     - average_maturity [NUMERIC(12, 4)]
-     - average_maturity_unit [VARCHAR(20)]
-     - yield_to_maturity [NUMERIC(12, 4)]
-     - modified_duration [NUMERIC(12, 4)]
-     - modified_duration_unit [VARCHAR(20)]
-     - fetched_at [DATETIME]
+7. mfi360_scheme_risk_ratios (Risk Analytics | Live Table)
+   - scheme_id [INTEGER, PK, FK -> mfi360_fund_plans.scheme_id]
+   - standard_deviation [NUMERIC(12, 4)]
+   - beta [NUMERIC(12, 4)]
+   - sharpe_ratio [NUMERIC(12, 4)]
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
 
-8. mfi360_fund_managers (Docker PostgreSQL table for mfi360_fund_managers | Live Rows: 1206)
-   • Columns:
-     - fund_manager_id [INTEGER, PK]
-     - name [VARCHAR(200)]
-     - active [BOOLEAN]
-     - educational_qualification [TEXT]
-     - duplicate_of_fund_manager_id [INTEGER, FK -> mfi360_fund_managers.fund_manager_id]
-     - fetched_at [DATETIME]
+8. mfi360_scheme_valuation_metrics (Portfolio Valuation Multiples | Live Table)
+   - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+   - portfolio_date [DATE, PK]
+   - price_to_earnings [NUMERIC(12, 4)] — Portfolio P/E Multiple
+   - price_to_book [NUMERIC(12, 4)] — Portfolio P/B Multiple
+   - dividend_yield [NUMERIC(12, 4)] — Portfolio Dividend Yield %
+   - market_cap [NUMERIC(20, 4)]
+   - portfolio_turnover_ratio [NUMERIC(10, 4)]
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
 
-9. mfi360_fund_aum_history (Docker PostgreSQL table for mfi360_fund_aum_history | Live Rows: 0)
-   • Columns:
-     - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
-     - aum_date [DATE, PK]
-     - aum_cr [NUMERIC(18, 4)]
-     - fetched_at [DATETIME]
+9. mfi360_fund_debt_metrics (Debt Fund Durations & Yields | Live Table)
+   - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+   - portfolio_date [DATE, PK]
+   - average_maturity [NUMERIC(12, 4)]
+   - average_maturity_unit [VARCHAR(20)] — Years / Days
+   - yield_to_maturity [NUMERIC(12, 4)] — YTM %
+   - modified_duration [NUMERIC(12, 4)]
+   - modified_duration_unit [VARCHAR(20)]
+   - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+10. mfi360_fund_managers (Fund Manager Profiles | Live Table)
+    - fund_manager_id [INTEGER, PK]
+    - name [VARCHAR(300)]
+    - active [BOOLEAN]
+    - educational_qualification [TEXT]
+    - duplicate_of_fund_manager_id [INTEGER]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+11. mfi360_fund_manager_tenures (Manager Scheme Tenures | Live Table)
+    - fund_manager_id [INTEGER, PK, FK -> mfi360_fund_managers.fund_manager_id]
+    - amc_id [INTEGER, FK -> mfi360_amcs.mf_id]
+    - fund_id [INTEGER, PK, FK -> mfi360_funds.fund_id]
+    - fund_name [VARCHAR(300)]
+    - from_date [DATE, PK]
+    - to_date [DATE] — NULL if currently active
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+12. mfi360_fund_plan_dividend_history (Historical Dividend Payouts | Live Table)
+    - scheme_id [INTEGER, PK, FK -> mfi360_fund_plans.scheme_id]
+    - dividend_date [DATE, PK]
+    - dividend_pct [NUMERIC(10, 4)]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+13. mfi360_indices (Index Master | Live Table)
+    - index_id [INTEGER, PK]
+    - index_name [VARCHAR(300)]
+    - is_restricted [BOOLEAN]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+14. mfi360_indices_history (Daily Index Price Series | Live Table)
+    - index_id [INTEGER, PK, FK -> mfi360_indices.index_id]
+    - index_date [DATE, PK]
+    - value [NUMERIC(18, 4)]
+    - anchor_scheme_id [INTEGER]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+15. mfi360_composite_benchmark_history (Composite Benchmark Values | Live Table)
+    - composite_key [VARCHAR(200), PK]
+    - index_date [DATE, PK]
+    - value [NUMERIC(18, 4)]
+    - computed_at [TIMESTAMP WITH TIME ZONE]
+
+16. amfi_fund_benchmarks (AMFI Category Mandated Benchmarks | Live Table)
+    - sub_category_id [INTEGER, PK, FK -> amfi_sub_categories.sub_category_id]
+    - scheme_name [VARCHAR(300)]
+    - benchmark [TEXT]
+
+17. amfi_sub_categories (AMFI Category Taxonomy | Live Table)
+    - sub_category_id [INTEGER, PK]
+    - sub_category_name [VARCHAR(200)]
+    - category_id [INTEGER]
+    - category_name [VARCHAR(200)] — Equity, Debt, Hybrid, Solution Oriented, Other Schemes
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+18. amfi_portal_indices (AMFI Portal Benchmark Index Master | Live Table)
+    - index_id [INTEGER, PK]
+    - index_name [VARCHAR(300)]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+19. amfi_portal_indices_history (AMFI Benchmark Historical Values | Live Table)
+    - index_id [INTEGER, PK, FK -> amfi_portal_indices.index_id]
+    - index_date [DATE, PK]
+    - value [NUMERIC(18, 4)]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+20. amfi_isin_master (AMFI ISIN Mapping Master | Live Table)
+    - scheme_id [INTEGER, PK]
+    - amc_id [INTEGER]
+    - scheme_name [VARCHAR(300)]
+    - isin_primary [VARCHAR(30)]
+    - isin_reinvestment [VARCHAR(30)]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+21. amfi_nav_history_sync_windows (NAV Sync Window Metadata | Live Table)
+    - from_date [DATE]
+    - to_date [DATE]
+    - row_count [INTEGER]
+    - completed_at [TIMESTAMP WITH TIME ZONE]
+
+22. benchmark_reference_map (Benchmark Cross-System Resolver | Live Table)
+    - benchmark [TEXT, PK]
+    - source_system [VARCHAR(50)]
+    - mfi360_index_id [INTEGER]
+    - amfi_portal_index_id [INTEGER]
+    - mcx_icomdex_instrument_id [INTEGER]
+    - mcx_spot_commodity_id [INTEGER]
+    - composite_key [VARCHAR(200)]
+    - components [JSONB]
+    - resolved_at [TIMESTAMP WITH TIME ZONE]
+
+23. bse_isin_master (BSE Scheme Master | Live Table)
+    - product_code [VARCHAR(50), PK]
+    - scheme_name [TEXT]
+    - isin [VARCHAR(30)]
+
+24. mcx_icomdex_indices (MCX Commodity Index Master | Live Table)
+    - instrument_identifier [INTEGER, PK]
+    - instrument_code [VARCHAR(50)]
+    - display_name [VARCHAR(200)]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+25. mcx_icomdex_indices_history (MCX Commodity Daily OHLC Series | Live Table)
+    - instrument_identifier [INTEGER, PK, FK -> mcx_icomdex_indices.instrument_identifier]
+    - index_date [DATE, PK]
+    - open [NUMERIC(14, 4)]
+    - high [NUMERIC(14, 4)]
+    - low [NUMERIC(14, 4)]
+    - close [NUMERIC(14, 4)]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+26. mcx_spot_commodities (MCX Commodity Spot Master | Live Table)
+    - commodity_id [INTEGER, PK]
+    - symbol [VARCHAR(50)] — GOLD, SILVER, CRUDEOIL, COPPER, etc.
+    - location [VARCHAR(100)]
+    - unit [VARCHAR(50)]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+27. mcx_spot_market_prices (MCX Daily Commodity Spot Prices | Live Table)
+    - commodity_id [INTEGER, PK, FK -> mcx_spot_commodities.commodity_id]
+    - price_date [DATE, PK]
+    - value [NUMERIC(14, 4)]
+    - fetched_at [TIMESTAMP WITH TIME ZONE]
+
+28. cleaner_cache (Entity Resolution Cache | Live Table)
+    - table_key [VARCHAR(100), PK]
+    - column_key [VARCHAR(100), PK]
+    - value [TEXT, PK]
+    - verified_at [TIMESTAMP WITH TIME ZONE]

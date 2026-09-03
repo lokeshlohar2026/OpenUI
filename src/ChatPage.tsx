@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { ChatMessage } from "./ChatMessage";
+import { ChatMessage, extractClosedStatements } from "./ChatMessage";
 import {
   Sparkles,
   Bot,
@@ -119,12 +119,48 @@ export default function ChatPage() {
       if (!reader) return;
 
       let accumulated = "";
+      let skeletonAst = "";
+      let sseBuffer = "";
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        accumulated += chunk;
-        setCurrentStream(accumulated);
+        sseBuffer += chunk;
+
+        // Robust Turn 1 Speculative Layout Decider SSE event extraction
+        if (!skeletonAst && sseBuffer.includes("event: layout")) {
+          const match = sseBuffer.match(/event:\s*layout\s*\ndata:\s*(\{.*?\})\n\n/s);
+          if (match) {
+            try {
+              const parsed = JSON.parse(match[1]);
+              if (parsed.skeleton_ast) {
+                skeletonAst = parsed.skeleton_ast;
+                setCurrentStream(skeletonAst);
+                sseBuffer = sseBuffer.replace(/event:\s*layout\s*\ndata:\s*\{.*?\}\n\n/s, "");
+              }
+            } catch {}
+          }
+        }
+
+        // Remaining text is the Turn 2 code stream
+        if (skeletonAst) {
+          accumulated = sseBuffer.replace(/^event:\s*layout\s*\ndata:\s*\{.*?\}\n\n/s, "");
+        } else {
+          accumulated = sseBuffer;
+        }
+
+        // Merge complete statements with skeleton layout so components resolve progressively without syntax errors
+        if (accumulated && accumulated.trim()) {
+          const closed = extractClosedStatements(accumulated);
+          if (skeletonAst && !accumulated.includes("root =")) {
+            setCurrentStream(closed ? `${closed}\n\n${skeletonAst}` : skeletonAst);
+          } else {
+            setCurrentStream(accumulated);
+          }
+        } else if (skeletonAst) {
+          setCurrentStream(skeletonAst);
+        }
       }
 
       const elapsedMs = Math.round(performance.now() - queryStartTime);
@@ -133,7 +169,7 @@ export default function ChatPage() {
         {
           id: assistantMsgId,
           role: "assistant",
-          content: accumulated,
+          content: accumulated || skeletonAst,
           timestamp: assistantTimestamp,
           elapsedMs,
         },

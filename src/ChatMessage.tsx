@@ -150,12 +150,75 @@ function rewriteMacros(code: string): string {
   return code;
 }
 
+export function extractClosedStatements(code: string): string {
+  const lines = code.split("\n");
+  const closedBlocks: string[] = [];
+  let currentBlock: string[] = [];
+  let parens = 0;
+  let brackets = 0;
+  let braces = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let escaped = false;
+
+  for (const line of lines) {
+    if (!line.trim() && parens === 0 && brackets === 0 && braces === 0) {
+      continue;
+    }
+    currentBlock.push(line);
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (escaped) { escaped = false; continue; }
+      if (char === "\\") { escaped = true; continue; }
+      if (char === "'" && !inDoubleQuote) { inSingleQuote = !inSingleQuote; continue; }
+      if (char === '"' && !inSingleQuote) { inDoubleQuote = !inDoubleQuote; continue; }
+      if (inSingleQuote || inDoubleQuote) continue;
+      if (char === "(") parens++;
+      else if (char === ")") parens = Math.max(0, parens - 1);
+      else if (char === "[") brackets++;
+      else if (char === "]") brackets = Math.max(0, brackets - 1);
+      else if (char === "{") braces++;
+      else if (char === "}") braces = Math.max(0, braces - 1);
+    }
+
+    if (parens === 0 && brackets === 0 && braces === 0 && !inSingleQuote && !inDoubleQuote && currentBlock.length > 0) {
+      closedBlocks.push(currentBlock.join("\n"));
+      currentBlock = [];
+    }
+  }
+
+  return closedBlocks.join("\n\n");
+}
+
+const defaultWireframeSkeleton = `
+root = Column([
+  Grid(3, [
+    MetricCard("Loading Metric", [], "", ""),
+    MetricCard("Loading Metric", [], "", ""),
+    MetricCard("Loading Metric", [], "", "")
+  ]),
+  Grid(2, [
+    Card("Portfolio Distribution", HorizontalBarChart([], "", "")),
+    Card("Asset Allocation", PieChart([], "", ""))
+  ]),
+  Card("Historical Performance Timeline", AreaChart([], "", ""))
+])
+`.trim();
+
 function validateRenderableOpenUI(code: string, isStreaming: boolean): string {
-  const loading = 'root = Column([TextContent("Generating visual insight...")])';
   const failed = 'root = Column([Callout("Unable to render this response. The generated OpenUI payload was incomplete or invalid.", "warning")])';
 
   if (!code.trim()) {
-    return isStreaming ? loading : failed;
+    return isStreaming ? defaultWireframeSkeleton : failed;
+  }
+
+  let testCode = code;
+  if (isStreaming) {
+    const closed = extractClosedStatements(code);
+    if (closed && /^\s*root\s*=/m.test(closed)) {
+      testCode = closed;
+    }
   }
 
   let parens = 0;
@@ -165,7 +228,7 @@ function validateRenderableOpenUI(code: string, isStreaming: boolean): string {
   let inDoubleQuote = false;
   let escaped = false;
 
-  for (const char of code) {
+  for (const char of testCode) {
     if (escaped) {
       escaped = false;
       continue;
@@ -192,19 +255,19 @@ function validateRenderableOpenUI(code: string, isStreaming: boolean): string {
     else if (char === "{") braces++;
     else if (char === "}") braces--;
     if (parens < 0 || brackets < 0 || braces < 0) {
-      return isStreaming ? loading : failed;
+      return isStreaming ? defaultWireframeSkeleton : failed;
     }
   }
 
   if (parens !== 0 || brackets !== 0 || braces !== 0 || inSingleQuote || inDoubleQuote) {
-    return isStreaming ? loading : failed;
+    return isStreaming ? defaultWireframeSkeleton : failed;
   }
 
-  if (!/^\s*root\s*=/m.test(code)) {
-    return isStreaming ? loading : failed;
+  if (!/^\s*root\s*=/m.test(testCode)) {
+    return isStreaming ? defaultWireframeSkeleton : failed;
   }
 
-  return code;
+  return testCode;
 }
 
 export function ChatMessage({ text, isStreaming = false, timestamp, elapsedMs }: ChatMessageProps) {

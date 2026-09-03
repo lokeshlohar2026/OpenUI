@@ -95,8 +95,6 @@ async def chat_stream(request: Request):
     Streaming endpoint called by OpenUI ChatPage.
     Accepts JSON body: { message: str } and streams openui-lang tokens.
     """
-    from logger import log_request_received
-
     try:
         body = await request.json()
         user_message = body.get("message", "").strip()
@@ -105,8 +103,6 @@ async def chat_stream(request: Request):
             return JSONResponse(status_code=400, content={"error": "message is required"})
         if len(user_message) > 2000:
             return JSONResponse(status_code=400, content={"error": "message too long (max 2000 chars)"})
-
-        log_request_received(user_message)
 
         return StreamingResponse(
             stream_openui_chain(user_message, session_id=session_id),

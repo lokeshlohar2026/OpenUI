@@ -167,6 +167,7 @@ function Grid(fullProps: any) {
 function Card(fullProps: any) {
   const props = fullProps?.props ?? fullProps ?? {};
   const renderNode = fullProps?.renderNode;
+  const isStreaming = useIsStreaming();
 
   let title: string | undefined = undefined;
   let footer: string | undefined = undefined;
@@ -221,7 +222,7 @@ function Card(fullProps: any) {
       }
       return false;
     };
-    if (checkNodeEmpty(children)) return null;
+    if (!isStreaming && checkNodeEmpty(children)) return null;
   }
 
   return (
@@ -480,18 +481,27 @@ function FundLineChart(fullProps: any) {
   if (!rows.length) {
     if (isStreaming) {
       return (
-        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 mb-3">
-            Performance & Trajectory
-          </h4>
-          <div className="h-[180px] flex flex-col justify-center items-center gap-2 animate-pulse bg-zinc-50 rounded-xl">
-            <div className="w-6 h-6 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-            <span className="text-xs text-zinc-400">Loading live time-series…</span>
+        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2 h-[260px] flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div className="h-4 bg-zinc-200/80 rounded w-48 animate-pulse" />
+            <div className="flex gap-2">
+              <div className="h-3 w-12 bg-blue-100 rounded-full animate-pulse" />
+              <div className="h-3 w-12 bg-emerald-100 rounded-full animate-pulse" />
+            </div>
+          </div>
+          <div className="relative flex-1 my-3 flex items-end justify-between border-b border-l border-zinc-200/70 p-2 overflow-hidden">
+            <svg className="absolute inset-0 w-full h-full text-blue-300/50 animate-pulse" preserveAspectRatio="none" viewBox="0 0 100 40">
+              <path d="M0,30 Q30,15 60,25 T100,8" fill="none" stroke="#3b82f6" strokeWidth="2" strokeOpacity="0.4" />
+              <path d="M0,38 Q40,28 70,18 T100,12" fill="none" stroke="#10b981" strokeWidth="2" strokeOpacity="0.4" />
+            </svg>
+          </div>
+          <div className="flex justify-between text-[10px] text-zinc-300">
+            <span>2015</span><span>2018</span><span>2021</span><span>2024</span><span>2026</span>
           </div>
         </div>
       );
     }
-    return null;;
+    return null;
   }
 
   const sample = rows[0] || {};
@@ -571,18 +581,24 @@ function AreaChart(fullProps: any) {
   if (!rows.length) {
     if (isStreaming) {
       return (
-        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 mb-3">
-            AUM Growth Trajectory
-          </h4>
-          <div className="h-[180px] flex flex-col justify-center items-center gap-2 animate-pulse bg-zinc-50 rounded-xl">
-            <div className="w-6 h-6 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-            <span className="text-xs text-zinc-400">Loading timeline data…</span>
+        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2 h-[260px] flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div className="h-4 bg-zinc-200/80 rounded w-44 animate-pulse" />
+            <div className="h-3 bg-zinc-100 rounded w-16 animate-pulse" />
+          </div>
+          <div className="relative flex-1 my-3 flex items-end justify-between border-b border-l border-zinc-200/70 p-2 overflow-hidden bg-gradient-to-t from-blue-50/40 to-transparent rounded-lg">
+            <svg className="absolute inset-0 w-full h-full text-blue-200/60 animate-pulse" preserveAspectRatio="none" viewBox="0 0 100 40">
+              <path d="M0,35 Q25,20 50,25 T100,5 L100,40 L0,40 Z" fill="currentColor" fillOpacity="0.3" />
+              <path d="M0,35 Q25,20 50,25 T100,5" fill="none" stroke="#3b82f6" strokeWidth="2" strokeOpacity="0.4" />
+            </svg>
+          </div>
+          <div className="flex justify-between text-[10px] text-zinc-300">
+            <span>2015</span><span>2018</span><span>2021</span><span>2024</span><span>2026</span>
           </div>
         </div>
       );
     }
-    return null;;
+    return null;
   }
 
   const sample = rows[0] || {};
@@ -629,16 +645,20 @@ function PieChart(fullProps: any) {
   if (!rows.length) {
     if (isStreaming) {
       return (
-        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 mb-3">Allocation Breakdown</h4>
-          <div className="h-[180px] flex flex-col justify-center items-center gap-2 animate-pulse bg-zinc-50 rounded-xl">
-            <div className="w-6 h-6 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-            <span className="text-xs text-zinc-400">Loading allocation…</span>
+        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2 h-[260px] flex flex-col justify-between">
+          <div className="h-4 bg-zinc-200/80 rounded w-36 animate-pulse" />
+          <div className="flex items-center justify-center gap-6 flex-1 my-2">
+            <div className="w-32 h-32 rounded-full border-[18px] border-zinc-100 border-t-blue-200 border-r-emerald-200 border-b-amber-200 animate-pulse" />
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded bg-blue-200" /><div className="h-3 w-16 bg-zinc-100 rounded animate-pulse" /></div>
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded bg-emerald-200" /><div className="h-3 w-14 bg-zinc-100 rounded animate-pulse" /></div>
+              <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded bg-amber-200" /><div className="h-3 w-12 bg-zinc-100 rounded animate-pulse" /></div>
+            </div>
           </div>
         </div>
       );
     }
-    return null;;
+    return null;
   }
 
   const sample = (rows[0] as Record<string, any>) || {};
@@ -698,22 +718,23 @@ function HorizontalBarChart(fullProps: any) {
   if (!rows.length) {
     if (isStreaming) {
       return (
-        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 mb-3">
-            Portfolio Holdings — % of Net Asset
-          </h4>
-          <div className="space-y-3 animate-pulse py-3">
-            {[88, 68, 52, 38, 24].map((width, idx) => (
-              <div key={idx} className="flex items-center gap-3">
-                <div className="h-3.5 bg-zinc-200 rounded w-28 shrink-0" />
-                <div className="h-4 bg-blue-200 rounded" style={{ width: `${width}%` }} />
+        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2 h-[260px] flex flex-col justify-between">
+          <div className="h-4 bg-zinc-200/80 rounded w-44 animate-pulse" />
+          <div className="space-y-3 flex-1 flex flex-col justify-center my-2">
+            {[84, 68, 54, 40, 26].map((w, idx) => (
+              <div key={idx} className="flex items-center gap-3 animate-pulse">
+                <div className="h-3.5 bg-zinc-200/80 rounded w-28 shrink-0" />
+                <div className="h-4 bg-blue-200/70 rounded" style={{ width: `${w}%` }} />
               </div>
             ))}
+          </div>
+          <div className="flex justify-between text-[10px] text-zinc-300">
+            <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
           </div>
         </div>
       );
     }
-    return null;;
+    return null;
   }
 
   const sample = rows[0] || {};
@@ -821,17 +842,23 @@ function BarChart(fullProps: any) {
   if (!rows.length) {
     if (isStreaming) {
       return (
-        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 mb-3">
-            Metric Distribution
-          </h4>
-          <div className="h-[180px] flex items-center justify-center animate-pulse bg-zinc-50 rounded-xl">
-            <span className="text-xs text-zinc-400">Loading chart data…</span>
+        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2 h-[260px] flex flex-col justify-between">
+          <div className="h-4 bg-zinc-200/80 rounded w-40 animate-pulse" />
+          <div className="flex-1 flex items-end justify-around gap-3 border-b border-zinc-200/70 pb-1 my-2">
+            {[65, 88, 45, 92, 58, 74].map((h, idx) => (
+              <div key={idx} className="flex flex-col items-center gap-1.5 flex-1 animate-pulse">
+                <div className="w-full bg-blue-200/70 rounded-t" style={{ height: `${h}%` }} />
+                <div className="h-2.5 w-8 bg-zinc-100 rounded" />
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between text-[10px] text-zinc-300">
+            <span>Cat 1</span><span>Cat 2</span><span>Cat 3</span><span>Cat 4</span><span>Cat 5</span><span>Cat 6</span>
           </div>
         </div>
       );
     }
-    return null;;
+    return null;
   }
 
   const sample = rows[0] || {};
@@ -950,17 +977,26 @@ function DataTable(fullProps: any) {
   if (!rows.length) {
     if (isStreaming) {
       return (
-        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm animate-pulse my-2">
-          <div className="h-3.5 bg-slate-200 rounded w-32 mb-3" />
-          <div className="space-y-2">
-            <div className="h-7 bg-slate-100 rounded w-full" />
-            <div className="h-7 bg-slate-100 rounded w-full" />
-            <div className="h-7 bg-slate-100 rounded w-full" />
+        <div className="overflow-hidden rounded-2xl border border-zinc-200/90 bg-white shadow-2xs my-2.5 h-[220px] flex flex-col justify-between p-3.5">
+          <div className="h-4 bg-zinc-200/80 rounded w-36 mb-2 animate-pulse" />
+          <div className="flex-1 flex flex-col justify-around">
+            <div className="h-7 bg-zinc-100 rounded-lg flex items-center px-3 gap-6">
+              <div className="h-3 bg-zinc-200/80 rounded w-24" />
+              <div className="h-3 bg-zinc-200/80 rounded w-32" />
+              <div className="h-3 bg-zinc-200/80 rounded w-20" />
+            </div>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center px-3 gap-6 py-1.5 border-b border-zinc-50 animate-pulse">
+                <div className="h-3 bg-zinc-200/60 rounded w-20" />
+                <div className="h-3 bg-zinc-100 rounded w-28" />
+                <div className="h-3 bg-zinc-100 rounded w-16" />
+              </div>
+            ))}
           </div>
         </div>
       );
     }
-    return null;;
+    return null;
   }
 
   const columnsProp = props.columns;
@@ -1112,17 +1148,22 @@ function RadarChart(fullProps: any) {
   if (!chartData.length) {
     if (isStreaming) {
       return (
-        <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm my-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
+        <div className="p-4 bg-white rounded-2xl border border-zinc-200/90 shadow-2xs my-2 h-[260px] flex flex-col justify-between">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 mb-3 animate-pulse">
             Risk & Volatility Radar Matrix
           </h4>
-          <div className="h-[220px] flex justify-center items-center animate-pulse bg-slate-50 rounded-lg">
-            <div className="w-6 h-6 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+          <div className="flex-1 flex items-center justify-center my-2">
+            <div className="w-32 h-32 rounded-full border-2 border-dashed border-blue-200 animate-pulse flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full border border-zinc-200" />
+            </div>
+          </div>
+          <div className="flex justify-around text-[10px] text-zinc-300">
+            <span>Beta</span><span>Sharpe</span><span>Std Dev</span>
           </div>
         </div>
       );
     }
-    return null;;
+    return null;
   }
 
   return (
