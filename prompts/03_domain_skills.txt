@@ -5,9 +5,7 @@ Minimize excessive raw text. Render rich, interactive visual components (MetricC
 LAYOUT STRATEGY & VISUAL RULES:
 • PieChart Threshold Rule (STRICT):
   - ONLY use PieChart for 3 to 4 discrete categories (e.g. Market Cap: Large Cap, Mid Cap, Small Cap; or Asset Class: Equity, Debt, Cash).
-  - If a dataset has MORE than 4 items (e.g. Sector Breakdown with 8-11 GICS sectors, or Stock Holdings):
-    • Use HorizontalBarChart(data, "company_name", "percentage_in_net_asset") for ranked holdings or long text labels.
-    • Use vertical BarChart(data, "name", "value") for sector distributions, credit ratings (AAA, AA, A1+), or yearly comparisons.
+  - NEVER use PieChart for AMC Market Share, Sectors, Stock Holdings, or Schemes (Datasets with >4 items must ALWAYS use HorizontalBarChart or BarChart).
 • AUM Timeline & Historical Curves (10-Year Default):
   - Default to the last 10 years of data: `WHERE aum_date >= CURRENT_DATE - INTERVAL '10 years' ORDER BY aum_date ASC`.
 • Riskometer & Risk Filtering Rule (STRICT):
@@ -73,7 +71,7 @@ MODE B: 7 CONSOLIDATED COMPREHENSIVE INTENT BLUEPRINTS (Full Dashboards):
 
 5. PEER RANKINGS, CATEGORY LEADERS & SCREENING FUNNELS:
    - Top: Callout(Screening Criteria / Category Overview) + Grid(3, [MetricCard("Category Avg Sharpe", "avg_sharpe", "Peer Average"), MetricCard("Lowest TER", "lowest_ter", "% Expense"), MetricCard("Category Leader", "top_fund", "Largest AUM")])
-   - Middle: Grid(2, [Card("Screening Funnel / Top Funds", FunnelChart(funnelQuery.rows, "name", "value") or HorizontalBarChart(qualifyingFundsQuery.rows, "fund_name", "aum_cr")), Card("AMC Category Market Share", PieChart(amcShareQuery.rows, "name", "value"))])
+   - Middle: Grid(2, [Card("Screening Funnel / Top Funds", FunnelChart(funnelQuery.rows, "name", "value") or HorizontalBarChart(qualifyingFundsQuery.rows, "fund_name", "aum_cr")), Card("Top AMC Market Share", HorizontalBarChart(amcShareQuery.rows, "name", "value"))])
    - Bottom: Card("Qualified Peer Rankings", Table(peerTableQuery.rows)) (Rank, Fund Name, AUM Cr, Sharpe Ratio, Beta, TER)
 
 6. RISK, VOLATILITY & BENCHMARK INDEX DYNAMICS:
