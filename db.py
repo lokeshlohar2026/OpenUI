@@ -313,7 +313,7 @@ def execute_safe_sql(sql_query: str, max_rows: int = 100) -> Dict[str, Any]:
     def run_query(target_sql: str) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SET statement_timeout = '2000ms';")
+                cur.execute("SET statement_timeout = 0;")  # 0 = unlimited execution time
                 exec_sql = target_sql if re.search(r"\bLIMIT\s+\d+\b", target_sql, re.IGNORECASE) else f"{target_sql} LIMIT {int(max_rows)}"
                 try:
                     cur.execute(exec_sql)
