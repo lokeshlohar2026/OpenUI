@@ -206,7 +206,11 @@ async def _summarize_messages_llm(messages: List[Dict[str, str]], model_name: st
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "x-opencode-session": "openui-summary-session",
+            }
             resp = await client.post(f"{OPENCODE_BASE_URL}/chat/completions", headers=headers, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
@@ -302,7 +306,11 @@ async def _stream_openai_compatible(
     ttft_callback: Optional[Any] = None,
 ) -> AsyncGenerator[str, None]:
     """Shared helper for OpenAI-compatible streaming endpoints (OpenCode / Zen Go)."""
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "x-opencode-session": "openui-stream-session",
+    }
     if extra_headers:
         headers.update(extra_headers)
 
@@ -504,6 +512,7 @@ async def decide_layout_turn(user_query: str) -> str:
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
+                    "x-opencode-session": "openui-layout-session",
                 },
                 json=payload,
             ) as resp:
